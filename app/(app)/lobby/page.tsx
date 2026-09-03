@@ -14,8 +14,10 @@ import { useToast } from "@/components/ui/toast";
 import { RoomList } from "@/components/lobby/room-list";
 import { JoinDialog } from "@/components/lobby/join-dialog";
 import { CreateDialog } from "@/components/lobby/create-dialog";
+import { GameModeDialog } from "@/components/games/game-mode-dialog";
 import { GameTypeName, GAME_TYPE_LIST, STATUS_LABEL } from "@/lib/constants";
 import { Card } from "@/components/ui/card";
+import { Bot } from "lucide-react";
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -23,6 +25,7 @@ export default function LobbyPage() {
   const [activeTab, setActiveTab] = React.useState<GameTypeName>("LUDO");
   const [showJoin, setShowJoin] = React.useState(false);
   const [showCreate, setShowCreate] = React.useState(false);
+  const [showAiDialog, setShowAiDialog] = React.useState(false);
 
   const { data: roomsData, loading: roomsLoading, refresh: refreshRooms } = useApiPoll<{ rooms: any[] }>(
     `/api/rooms?type=${activeTab}`,
@@ -41,6 +44,9 @@ export default function LobbyPage() {
           <p className="text-slate-500 font-medium">Join a room or create your own</p>
         </div>
         <div className="flex gap-3">
+          <Button variant="outline" onClick={() => setShowAiDialog(true)} className="gap-2 italic font-black uppercase tracking-widest text-xs border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10">
+            <Bot size={16} /> Play vs AI
+          </Button>
           <Button variant="secondary" onClick={() => setShowJoin(true)} className="gap-2 italic font-black uppercase tracking-widest text-xs">
             <LogIn size={16} /> Join By Code
           </Button>
@@ -93,6 +99,7 @@ export default function LobbyPage() {
 
       <JoinDialog open={showJoin} onClose={() => setShowJoin(false)} />
       <CreateDialog open={showCreate} onClose={() => setShowCreate(false)} activeType={activeTab} />
+      <GameModeDialog open={showAiDialog} onClose={() => setShowAiDialog(false)} type={activeTab} />
     </div>
   );
 }

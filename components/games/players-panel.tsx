@@ -44,7 +44,7 @@ export function PlayersPanel({ snapshot }: PlayersPanelProps) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium truncate text-slate-100">
-                    {seat.username}
+                    {seat.isAi && "🤖 "}{seat.username}
                     {isMe && <span className="ml-1 text-xs text-slate-400 font-normal">(You)</span>}
                   </span>
                 </div>
@@ -84,7 +84,7 @@ function getPlayerStatus(seat: GamePlayerDTO, snapshot: GameSnapshot): string | 
   const { game, state } = snapshot;
   
   if (game.status === "FINISHED") {
-    return game.winnerId === seat.userId ? "Winner" : "Lost";
+    return game.winnerPlayerNumber === seat.playerNumber ? "Winner" : "Lost";
   }
 
   // Check engine-specific state if available

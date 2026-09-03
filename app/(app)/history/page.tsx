@@ -22,6 +22,8 @@ interface HistoryRow {
   winnerId: string;
   winnerUsername: string | null;
   opponentNames: string[];
+  gameMode: 'ONLINE' | 'AI';
+  aiDifficulty: string | null;
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -84,15 +86,21 @@ export default function HistoryPage() {
               <tbody className="divide-y divide-white/5">
                 {data.games.map((game) => (
                   <tr key={game.id} className="hover:bg-white/[0.04] transition-colors group">
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-2xl">{game.type === 'LUDO' ? '🎲' : game.type === 'CHESS' ? '♟️' : '🔴'}</span>
-                        <div>
-                          <p className="text-sm font-bold text-white uppercase italic tracking-wider">{game.type}</p>
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5">#{game.roomCode}</p>
-                        </div>
-                      </div>
-                    </td>
+                     <td className="px-6 py-5">
+                       <div className="flex items-center gap-3">
+                         <span className="text-2xl">{game.type === 'LUDO' ? '🎲' : game.type === 'CHESS' ? '♟️' : '🔴'}</span>
+                         <div>
+                           <div className="flex items-center gap-2">
+                             <p className="text-sm font-bold text-white uppercase italic tracking-wider">{game.type}</p>
+                             {game.gameMode === 'AI' && <Badge tone="cyan" className="text-[8px] px-1 h-3.5">🤖 AI</Badge>}
+                           </div>
+                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter mt-0.5">
+                             #{game.roomCode}{game.gameMode === 'AI' && ` • ${game.aiDifficulty}`}
+                           </p>
+                         </div>
+                       </div>
+                     </td>
+
                     <td className="px-6 py-5">
                       {game.result === 'win' ? (
                         <Badge tone="green" className="italic font-black uppercase tracking-widest">VICTORY</Badge>

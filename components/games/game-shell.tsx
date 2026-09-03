@@ -1,6 +1,7 @@
 "use client";
 
 import { useGame } from "@/hooks/use-game";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,13 +17,14 @@ import { CheckersBoard } from "./checkers-board";
 import { GAME_TYPES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import { ArrowLeft, Flag, Play, LogOut, RotateCcw } from "lucide-react";
+import { ArrowLeft, Flag, Play, LogOut, RotateCcw, Bot } from "lucide-react";
 
 interface GameShellProps {
   gameId: string;
 }
 
 export function GameShell({ gameId }: GameShellProps) {
+  const router = useRouter();
   const { snapshot, error, loading, act, refresh, isActing } = useGame(gameId);
 
   if (loading && !snapshot) {
@@ -69,6 +71,9 @@ export function GameShell({ gameId }: GameShellProps) {
               <span className="text-xl">{GAME_TYPES[game.type].emoji}</span>
               <h1 className="font-bold text-white tracking-tight">{GAME_TYPES[game.type].label} Room</h1>
             </div>
+            {game.gameMode === 'AI' && (
+              <Badge tone="cyan" className="ml-2">🤖 AI · {game.aiDifficulty?.toLowerCase()}</Badge>
+            )}
           </div>
           <Badge tone="amber">Waiting</Badge>
         </div>
@@ -152,7 +157,8 @@ export function GameShell({ gameId }: GameShellProps) {
     );
   }
 
-  const result = isOver ? (game.winnerId === snapshot.seats.find(s => s.playerNumber === mySeatNumber)?.userId ? "WIN" : game.status === "DRAW" ? "DRAW" : "LOSS") : null;
+  const result = isOver ? (game.winnerPlayerNumber === mySeatNumber ? "WIN" : game.status === "DRAW" ? "DRAW" : "LOSS") : null;
+  const winnerSeat = isOver ? snapshot.seats.find(s => s.playerNumber === game.winnerPlayerNumber) : null;
 
   return (
     <div className="min-h-screen bg-arena-gradient flex flex-col h-screen overflow-hidden">
@@ -167,6 +173,11 @@ export function GameShell({ gameId }: GameShellProps) {
             <span className="font-bold text-sm tracking-tight text-white hidden sm:inline">
               {GAME_TYPES[game.type].label}
             </span>
+            {game.gameMode === "AI" && game.aiDifficulty && (
+              <Badge tone="cyan" className="text-[10px] px-1.5 h-5 ml-1">
+                🤖 AI · {game.aiDifficulty.charAt(0) + game.aiDifficulty.slice(1).toLowerCase()}
+              </Badge>
+            )}
           </div>
           <Badge tone={isOver ? "slate" : "green"} className="text-[10px] px-1.5 h-5">
             {isOver ? (game.status === "DRAW" ? "Draw" : "Finished") : "Playing"}
@@ -232,7 +243,14 @@ export function GameShell({ gameId }: GameShellProps) {
             
             <div className="flex-1 flex flex-col min-h-0 gap-4">
               <div className="flex-1 flex flex-col min-h-0">
-                <ChatWidget gameId={game.id} compact className="h-full" />
+                {game.gameMode !== 'AI' ? (
+                  <ChatWidget gameId={game.id} compact className="h-full" />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-xs italic gap-2 p-8 text-center glass border-dashed border-white/5">
+                    <Bot size={32} className="opacity-20" />
+                    Chat is disabled in AI mode
+                  </div>
+                )}
               </div>
               <div className="h-[200px] shrink-0">
                 <MoveHistory snapshot={snapshot} />
@@ -252,43 +270,82 @@ export function GameShell({ gameId }: GameShellProps) {
                )} />
 
                <div className="space-y-6">
-                 <div className="space-y-1">
-                   <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Match Result</p>
-                   <h2 className={cn(
-                     "text-5xl font-black italic tracking-tighter",
-                     result === "WIN" ? "text-green-400" : result === "DRAW" ? "text-blue-400" : "text-rose-400"
-                   )}>
-                     {result === "WIN" ? "VICTORY" : result === "DRAW" ? "DRAW" : "DEFEAT"}
-                   </h2>
-                 </div>
-
-                 {game.winnerId && (
-                   <div className="flex flex-col items-center gap-2">
-                     <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Winner</p>
-                     <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-full border border-white/10">
-                        <span className="text-sm font-bold text-white truncate max-w-[120px]">
-                          {snapshot.seats.find(s => s.userId === game.winnerId)?.username || "Unknown"}
-                        </span>
+                 {game.gameMode === 'AI' ? (
+                   <div className="space-y-4">
+                     <div className="space-y-1">
+                       <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">GAME OVER 🎉</p>
+                       <h2 className={cn(
+                         "text-4xl font-black italic tracking-tighter",
+                         result === "WIN" ? "text-green-400" : result === "DRAW" ? "text-blue-400" : "text-rose-400"
+                       )}>
+                         {result === "WIN" ? "Winner: You" : result === "DRAW" ? "Draw" : `Winner: ${winnerSeat?.isAi ? '🤖 ' : ''}${winnerSeat?.username || 'Bot'}`}
+                       </h2>
+                     </div>
+                     <Badge tone="cyan" className="uppercase tracking-widest text-[10px]">
+                       Mode: AI · Difficulty: {game.aiDifficulty}
+                     </Badge>
+                     
+                     <div className="flex flex-col gap-2 pt-4">
+                       <Button 
+                         variant="primary" 
+                         className="w-full h-12 italic font-black"
+                         onClick={() => act({ action: "rematch" })}
+                         loading={isActing}
+                       >
+                         <RotateCcw className="w-4 h-4 mr-2" />
+                         PLAY AGAIN
+                       </Button>
+                       <div className="grid grid-cols-2 gap-2">
+                         <Button variant="outline" className="text-xs font-bold" onClick={() => router.push('/lobby')}>
+                           Choose Another
+                         </Button>
+                         <Button variant="ghost" className="text-xs font-bold" onClick={() => router.push('/')}>
+                           Dashboard
+                         </Button>
+                       </div>
                      </div>
                    </div>
-                 )}
+                 ) : (
+                   <>
+                     <div className="space-y-1">
+                       <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Match Result</p>
+                       <h2 className={cn(
+                         "text-5xl font-black italic tracking-tighter",
+                         result === "WIN" ? "text-green-400" : result === "DRAW" ? "text-blue-400" : "text-rose-400"
+                       )}>
+                         {result === "WIN" ? "VICTORY" : result === "DRAW" ? "DRAW" : "DEFEAT"}
+                       </h2>
+                     </div>
 
-                 <div className="grid grid-cols-2 gap-3 pt-4">
-                    <Button variant="outline" className="w-full" asChild>
-                      <Link href="/lobby">Lobby</Link>
-                    </Button>
-                    {isPlayer && (
-                      <Button 
-                        variant="primary" 
-                        className="w-full"
-                        onClick={() => act({ action: "rematch" })}
-                        loading={isActing}
-                      >
-                        <RotateCcw className="w-4 h-4 mr-2" />
-                        Rematch
-                      </Button>
-                    )}
-                 </div>
+                     {winnerSeat && (
+                       <div className="flex flex-col items-center gap-2">
+                         <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Winner</p>
+                         <div className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-full border border-white/10">
+                            <span className="text-sm font-bold text-white truncate max-w-[120px]">
+                              {(winnerSeat.isAi ? "🤖 " : "") + winnerSeat.username}
+                            </span>
+                         </div>
+                       </div>
+                     )}
+
+                     <div className="grid grid-cols-2 gap-3 pt-4">
+                        <Button variant="outline" className="w-full" asChild>
+                          <Link href="/lobby">Lobby</Link>
+                        </Button>
+                        {isPlayer && (
+                          <Button 
+                            variant="primary" 
+                            className="w-full"
+                            onClick={() => act({ action: "rematch" })}
+                            loading={isActing}
+                          >
+                            <RotateCcw className="w-4 h-4 mr-2" />
+                            Rematch
+                          </Button>
+                        )}
+                     </div>
+                   </>
+                 )}
                </div>
             </Card>
           </div>

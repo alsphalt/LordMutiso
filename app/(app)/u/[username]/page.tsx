@@ -30,6 +30,9 @@ interface ProfileData {
     ludoWins: number;
     chessWins: number;
     checkersWins: number;
+    aiGames: number;
+    aiWins: number;
+    aiDraws: number;
   } | null;
   recent: any[];
   isSelf: boolean;
@@ -66,6 +69,7 @@ export default function ProfilePage() {
 
   const { user, stats, recent, isSelf } = data;
   const winRate = stats ? winRatePercent(stats.gamesWon, stats.gamesPlayed) : 0;
+  const aiWinRate = stats ? winRatePercent(stats.aiWins, stats.aiGames) : 0;
 
   return (
     <div className="animate-fade-in space-y-10">
@@ -120,24 +124,48 @@ export default function ProfilePage() {
         <div className="lg:col-span-4 space-y-8">
           <section>
             <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-2">
-              <span className="w-8 h-px bg-white/10" /> Career Stats
+              <span className="w-8 h-px bg-white/10" /> Online Combat
             </h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="glass p-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Played</p>
                 <p className="mt-1 text-2xl font-black italic text-white">{stats?.gamesPlayed || 0}</p>
               </div>
+              <div className="glass p-5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Win Rate</p>
+                <p className="mt-1 text-2xl font-black italic text-indigo-400">{winRate}%</p>
+              </div>
               <div className="glass p-5 border-emerald-500/20">
                 <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60">Won</p>
                 <p className="mt-1 text-2xl font-black italic text-emerald-400">{stats?.gamesWon || 0}</p>
               </div>
-              <div className="glass p-5 border-rose-500/20">
-                <p className="text-[10px] font-black uppercase tracking-widest text-rose-500/60">Lost</p>
-                <p className="mt-1 text-2xl font-black italic text-rose-400">{stats?.gamesLost || 0}</p>
+              <div className="glass p-5 border-white/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Rating</p>
+                <p className="mt-1 text-2xl font-black italic text-cyan-400">{stats?.rating || 1000}</p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-xs font-black uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-2">
+              <span className="w-8 h-px bg-white/10" /> AI Practice
+            </h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="glass p-5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">Games</p>
+                <p className="mt-1 text-2xl font-black italic text-white">{stats?.aiGames || 0}</p>
+              </div>
+              <div className="glass p-5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400">Win Rate</p>
+                <p className="mt-1 text-2xl font-black italic text-cyan-400">{aiWinRate}%</p>
+              </div>
+              <div className="glass p-5 border-emerald-500/20">
+                <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500/60">Wins</p>
+                <p className="mt-1 text-2xl font-black italic text-emerald-400">{stats?.aiWins || 0}</p>
               </div>
               <div className="glass p-5 border-amber-500/20">
-                <p className="text-[10px] font-black uppercase tracking-widest text-amber-500/60">Drawn</p>
-                <p className="mt-1 text-2xl font-black italic text-amber-400">{stats?.draws || 0}</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-500/60">Draws</p>
+                <p className="mt-1 text-2xl font-black italic text-amber-400">{stats?.aiDraws || 0}</p>
               </div>
             </div>
           </section>
@@ -187,9 +215,10 @@ export default function ProfilePage() {
                           ) : (
                             <Badge tone="amber" className="text-[10px] italic font-black uppercase tracking-widest">DRAW</Badge>
                           )}
+                         {game.gameMode === 'AI' && <Badge tone="cyan" className="text-[8px] px-1 h-3.5">🤖 AI</Badge>}
                         </div>
                         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-tighter mt-1">
-                          vs {game.opponentNames.join(', ')} • {timeAgo(game.createdAt)}
+                          vs {game.gameMode === 'AI' && "🤖 "}{game.opponentNames.join(', ')} • {timeAgo(game.createdAt)}
                         </p>
                       </div>
                     </div>

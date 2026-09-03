@@ -15,12 +15,15 @@ import { Stat } from "@/components/ui/stat";
 import { Spinner } from "@/components/ui/spinner";
 import { ChatWidget } from "@/components/chat/chat-widget";
 import { GameCard } from "@/components/games/game-card";
+import { GameModeDialog } from "@/components/games/game-mode-dialog";
 import { GAME_TYPE_LIST, STATUS_LABEL } from "@/lib/constants";
 import { cn, fmtDate } from "@/lib/utils";
+import { GameTypeName } from "@/lib/games/types";
 
 export default function HomePage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
+  const [openFor, setOpenFor] = React.useState<GameTypeName | null>(null);
 
   if (authLoading) {
     return (
@@ -31,13 +34,35 @@ export default function HomePage() {
   }
 
   if (!user) {
-    return <LandingView />;
+    return (
+      <>
+        <LandingView />
+        <GameModeDialog 
+          open={!!openFor} 
+          onClose={() => setOpenFor(null)} 
+          type={openFor || "LUDO"} 
+        />
+      </>
+    );
   }
 
-  return <DashboardView user={user} />;
+  return (
+    <>
+      <DashboardView user={user} setOpenFor={setOpenFor} />
+      <GameModeDialog 
+        open={!!openFor} 
+        onClose={() => setOpenFor(null)} 
+        type={openFor || "LUDO"} 
+      />
+    </>
+  );
 }
 
 function LandingView() {
+  // We can't use setOpenFor here easily since it's a separate component, 
+  // but we can lift it or just keep it as is since landing redirects to register.
+  // Actually, the prompt says "dashboard — replace direct game-card...".
+  // Landing usually just leads to auth.
   return (
     <div className="relative min-h-screen overflow-hidden">
       {/* Hero Section */}
@@ -85,7 +110,7 @@ function LandingView() {
   );
 }
 
-function DashboardView({ user }: { user: any }) {
+function DashboardView({ user, setOpenFor }: { user: any, setOpenFor: (type: GameTypeName) => void }) {
   const router = useRouter();
   const { data: onlineData } = useApiPoll<{ count: number; users: any[] }>("/api/online", 15000);
   const { data: myGamesData } = useApiPoll<{ games: any[] }>("/api/games/mine", 5000);
@@ -121,7 +146,7 @@ function DashboardView({ user }: { user: any }) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
               {GAME_TYPE_LIST.map((type) => (
-                <GameCard key={type} type={type} onPlay={() => router.push(`/lobby?type=${type}`)} />
+                <GameCard key={type} type={type as GameTypeName} onPlay={() => setOpenFor(type as GameTypeName)} />
               ))}
             </div>
           </section>
@@ -149,6 +174,7 @@ function DashboardView({ user }: { user: any }) {
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-white uppercase italic text-sm">{game.type}</p>
                           <Badge tone={game.status === 'PLAYING' ? 'green' : 'amber'}>{STATUS_LABEL[game.status]}</Badge>
+                          {game.gameMode === 'AI' && <Badge tone="cyan">🤖 AI</Badge>}
                         </div>
                         <p className="text-xs text-slate-500 mt-1 uppercase font-bold tracking-tighter">
                           vs {game.seats.filter((s: string) => s !== user.username).join(', ') || 'Waiting...'}
