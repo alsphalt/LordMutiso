@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    @apply bg-arena-950 text-slate-100 selection:bg-arena-purple/30 selection:text-white overflow-x-hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full hover:bg-white/20 transition-colors;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/[0.04] backdrop-blur-xl border border-white/10 rounded-2xl;
+  }
+
+  .glass-strong {
+    @apply bg-white/[0.08] backdrop-blur-2xl border border-white/20 rounded-2xl;
+  }
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-violet-400 to-cyan-400;
+  }
+
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-arena-purple focus-visible:ring-offset-2 focus-visible:ring-offset-arena-950;
+  }
+
+  .bg-arena-gradient {
+    background: radial-gradient(1200px 600px at 15% -10%, rgba(139,92,246,0.18), transparent 60%),
+                radial-gradient(1000px 500px at 90% 0%, rgba(34,211,238,0.12), transparent 55%),
+                linear-gradient(180deg, #0c0718 0%, #07030f 100%);
+  }
+}

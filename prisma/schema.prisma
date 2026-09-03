@@ -1,0 +1,215 @@
+// ============================================================
+// DARKNOTE GAMING ARENA — Prisma schema
+// Single datasource: Neon PostgreSQL via DATABASE_URL only.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum GameType {
+  LUDO
+  CHESS
+  CHECKERS
+}
+
+enum GameStatus {
+  WAITING
+  PLAYING
+  FINISHED
+  DRAW
+  CANCELLED
+}
+
+enum PlayerColor {
+  RED
+  YELLOW
+  GREEN
+  BLUE
+  WHITE
+  BLACK
+}
+
+enum NotificationType {
+  INVITATION
+  PLAYER_JOINED
+  GAME_STARTED
+  YOUR_TURN
+  GAME_ENDED
+  REMATCH
+  CHAT
+  SYSTEM
+}
+
+// ---------- Auth & users ----------
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique // sha256 of the raw session token (never stored raw)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  image        String? // avatar URL; falls back to generated initials avatar
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lastSeen     DateTime @default(now())
+
+  statistics    UserStatistics?
+  sessions      Session[]
+  createdGames  Game[]          @relation("GameCreator")
+  wonGames      Game[]          @relation("GameWinner")
+  gamePlayers   GamePlayer[]
+  chatMessages  ChatMessage[]
+  notifications Notification[]
+  // Games this user is currently in (derived via GamePlayer for UI)
+
+  @@index([lastSeen])
+  @@index([createdAt])
+}
+
+model UserStatistics {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  gamesPlayed Int @default(0)
+  gamesWon    Int @default(0)
+  gamesLost   Int @default(0)
+  draws       Int @default(0)
+  rating      Int @default(1000)
+
+  ludoWins     Int @default(0)
+  chessWins    Int @default(0)
+  checkersWins Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------- Games ----------
+
+model Game {
+  id        String     @id @default(cuid())
+  type      GameType
+  status    GameStatus @default(WAITING)
+  createdBy String
+  creator   User       @relation("GameCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  winnerId  String?
+  winner    User?      @relation("GameWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+
+  // JSON board/game state (authoritative, maintained server-side only)
+  gameState   Json @default("{}")
+  currentTurn Int? // 1-based playerNumber whose turn it is; null when not playing
+
+  createdAt DateTime  @default(now())
+  startedAt DateTime?
+  endedAt   DateTime?
+  updatedAt DateTime  @updatedAt
+
+  players       GamePlayer[]
+  moves         GameMove[]
+  room          GameRoom?
+  chat          ChatMessage[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([type])
+  @@index([createdBy])
+  @@index([createdAt])
+}
+
+model GamePlayer {
+  id           String      @id @default(cuid())
+  gameId       String
+  game         Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerNumber Int // 1-based seat
+  color        PlayerColor
+  score        Int         @default(0)
+  joinedAt     DateTime    @default(now())
+
+  moves GameMove[]
+
+  // A user cannot occupy two seats in the same game
+  @@unique([gameId, userId])
+  @@index([gameId, playerNumber])
+  @@index([userId])
+}
+
+model GameMove {
+  id         String     @id @default(cuid())
+  gameId     String
+  game       Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     GamePlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  moveNumber Int
+  moveData   Json // per-game move payload, validated server-side
+  createdAt  DateTime   @default(now())
+
+  @@unique([gameId, moveNumber])
+  @@index([gameId])
+  @@index([playerId])
+}
+
+model GameRoom {
+  id         String     @id @default(cuid())
+  roomCode   String     @unique // short join code, e.g. "K7P2QD"
+  gameId     String     @unique
+  game       Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  maxPlayers Int
+  status     GameStatus @default(WAITING)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([status])
+}
+
+// ---------- Chat ----------
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  gameId    String? // null  -> global chat
+  game      Game?    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([gameId, id])
+  @@index([senderId])
+}
+
+// ---------- Notifications ----------
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String // recipient
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  gameId    String?
+  game      Game?            @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read, createdAt])
+}
