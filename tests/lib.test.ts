@@ -6,7 +6,7 @@ import { sanitizeText, winRatePercent, randomRoomCode } from "../lib/utils";
 import { ROOM_CODE_ALPHABET, CHAT_MAX_LENGTH } from "../lib/constants";
 import { registerSchema, loginSchema, chatMessageSchema } from "../lib/validation/schemas";
 import { ratingAfterWin, ratingAfterDraw } from "../lib/games/elo";
-import { colorForSeat } from "../lib/games/types";
+import { seatAssignment, ludoSeatAssignment } from "../lib/games/types";
 
 test("password: hash & verify roundtrip, wrong password rejected", () => {
   const hash = hashPassword("sup3rSecret!");
@@ -64,12 +64,38 @@ test("elo: winner gains, loser loses; draw shifts slightly", () => {
   assert.ok(d.b > 1000);
 });
 
-test("colorForSeat maps seats deterministically", () => {
-  assert.equal(colorForSeat(0, "CHESS"), "WHITE");
-  assert.equal(colorForSeat(1, "CHESS"), "BLACK");
-  // Ludo classic corners: seat1 GREEN (TL), seat2 RED (TR), seat3 BLUE (BR), seat4 YELLOW (BL)
-  assert.equal(colorForSeat(0, "LUDO"), "GREEN");
-  assert.equal(colorForSeat(1, "LUDO"), "RED");
-  assert.equal(colorForSeat(2, "LUDO"), "BLUE");
-  assert.equal(colorForSeat(3, "LUDO"), "YELLOW");
+test("seatAssignment: chess & checkers are white/black", () => {
+  const a = seatAssignment("CHESS", 2, 0);
+  const b = seatAssignment("CHECKERS", 2, 1);
+  assert.equal(a.playerNumber, 1);
+  assert.equal(a.color, "WHITE");
+  assert.equal(b.playerNumber, 2);
+  assert.equal(b.color, "BLACK");
+});
+
+test("ludoSeatAssignment: 2 players always sit on opposite corners (TL + BR)", () => {
+  const p1 = ludoSeatAssignment(2, 0);
+  const p2 = ludoSeatAssignment(2, 1);
+  // Player 1: top-left slot (1), RED. Player 2: bottom-right slot (3), YELLOW.
+  assert.equal(p1.playerNumber, 1);
+  assert.equal(p1.color, "RED");
+  assert.equal(p2.playerNumber, 3);
+  assert.equal(p2.color, "YELLOW");
+  // The two corner slots must be diagonal — never on the same side.
+  const cornerOf = (pn: number): [number, number] =>
+    ({ 1: [0, 0], 2: [0, 1], 3: [1, 1], 4: [1, 0] } as Record<number, [number, number]>)[pn];
+  const [r1, c1] = cornerOf(p1.playerNumber);
+  const [r2, c2] = cornerOf(p2.playerNumber);
+  assert.notEqual(r1, r2, "must not share a row/side");
+  assert.notEqual(c1, c2, "must not share a column/side");
+});
+
+test("ludoSeatAssignment: 3-4 players keep classic corner order", () => {
+  const four = [0, 1, 2, 3].map((i) => ludoSeatAssignment(4, i));
+  assert.deepEqual(
+    four.map((s) => [s.playerNumber, s.color]),
+    [[1, "GREEN"], [2, "RED"], [3, "BLUE"], [4, "YELLOW"]]
+  );
+  const three = [0, 1, 2].map((i) => ludoSeatAssignment(3, i).playerNumber);
+  assert.deepEqual(three, [1, 2, 3]);
 });

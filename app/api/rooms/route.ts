@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { createRoomSchema } from "@/lib/validation/schemas";
 import { ROOM_CODE_ALPHABET, GAME_TYPES } from "@/lib/constants";
 import { randomRoomCode } from "@/lib/utils";
-import { colorForSeat } from "@/lib/games/types";
+import { seatAssignment } from "@/lib/games/types";
 
 export const dynamic = "force-dynamic";
 
@@ -91,12 +91,13 @@ export const POST = handle(async (req) => {
       },
     });
 
+    const first = seatAssignment(type, 1, 0);
     const player = await tx.gamePlayer.create({
       data: {
         gameId: game.id,
         userId: user.id,
-        playerNumber: 1,
-        color: colorForSeat(0, type),
+        playerNumber: first.playerNumber,
+        color: first.color,
       },
       include: { user: { select: { id: true, username: true, image: true } } },
     });

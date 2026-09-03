@@ -7,7 +7,6 @@ import { randomInt } from "@/lib/utils";
 import { notifyAll } from "@/lib/notifications";
 import { finishGame } from "@/lib/server/finish";
 import { leaveRoom } from "@/lib/server/rooms";
-import { colorForSeat } from "@/lib/games/types";
 
 // Engines
 import { rollLudo, moveLudoToken, resignLudo, createLudoState } from "@/lib/games/ludo/engine";

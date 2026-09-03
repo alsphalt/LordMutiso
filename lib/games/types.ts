@@ -83,14 +83,48 @@ export type ActionResult =
   | { ok: false; error: string };
 
 /**
- * Map a player seat index to a game color for a given player count.
+ * Seat assignment is the single source of truth for positions & colours.
  *
- * Ludo seats sit top-left (1), top-right (2), bottom-right (3), bottom-left (4)
- * and use the classic reference-board colours: GREEN TL, RED TR, BLUE BR, YELLOW BL.
+ * Board corner slots for Ludo: 1 = top-left, 2 = top-right, 3 = bottom-right,
+ * 4 = bottom-left. The playerNumber a seat receives IS its corner slot, so the
+ * engine paths, home columns, bases, centre triangles and tokens all agree.
+ *
+ * Layout rules (Ludo):
+ *  - 1 player  -> slot 1 (TL)
+ *  - 2 players -> a duel on DIAGONALLY OPPOSITE corners: seat 1 = TL (RED),
+ *    seat 2 = BR (YELLOW). Never two seats on the same side.
+ *  - 3-4 players -> classic order TL, TR, BR, BL with colours
+ *    GREEN, RED, BLUE, YELLOW (existing 4-player positioning, unchanged).
  */
-export function colorForSeat(seatIndex: number, gameType: GameTypeName): ColorName {
-  if (gameType === "CHESS") return seatIndex === 0 ? "WHITE" : "BLACK";
-  if (gameType === "CHECKERS") return seatIndex === 0 ? "WHITE" : "BLACK";
-  const ludoColors: ColorName[] = ["GREEN", "RED", "BLUE", "YELLOW"];
-  return ludoColors[seatIndex] ?? "GREEN";
+export interface SeatAssignment {
+  playerNumber: number;
+  color: ColorName;
+}
+
+const LUDO_CLASSIC_COLORS: ColorName[] = ["GREEN", "RED", "BLUE", "YELLOW"];
+
+export function ludoSeatAssignment(totalSeats: number, index: number): SeatAssignment {
+  if (totalSeats <= 2) {
+    // Duel: opposite corners — seat 1 TL (RED), seat 2 BR (YELLOW).
+    return index === 0
+      ? { playerNumber: 1, color: "RED" }
+      : { playerNumber: 3, color: "YELLOW" };
+  }
+  return {
+    playerNumber: index + 1,
+    color: LUDO_CLASSIC_COLORS[index] ?? "GREEN",
+  };
+}
+
+export function seatAssignment(
+  gameType: GameTypeName,
+  totalSeats: number,
+  index: number
+): SeatAssignment {
+  if (gameType === "LUDO") return ludoSeatAssignment(totalSeats, index);
+  // Chess & Checkers: seat 1 = WHITE, seat 2 = BLACK.
+  return {
+    playerNumber: index + 1,
+    color: index === 0 ? "WHITE" : "BLACK",
+  };
 }
