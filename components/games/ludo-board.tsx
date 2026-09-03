@@ -370,28 +370,62 @@ function DiceCube({
     );
   }
 
-  // Spin animation: accelerate, spin on multiple axes, decelerate, settle on target.
+  /**
+   * Physics-style roll — lightweight rAF simulation.
+   * A random angular impulse tumbles the cube; a damped oscillation and a
+   * bouncing hop give it a physical feel; the rotation curve decelerates and
+   * converges EXACTLY on the server-confirmed face (extra full turns never
+   * change the final orientation). No WebGL/heavy libraries: one DOM element,
+   * GPU-only transform updates, ideal for low-end phones.
+   */
   React.useEffect(() => {
     const el = cubeRef.current;
     if (!el || spinKey === 0) return;
     const [ax, ay] = FACE_ORIENT[target ?? 1] ?? [0, 0];
-    const [cx, cy] = curRef.current;
-    const turnsX = 2 + Math.floor(Math.random() * 3);
-    const turnsY = 1 + Math.floor(Math.random() * 3);
-    const to: [number, number] = [
-      // make the extra turns go the same direction as the axis delta for natural spin
-      cx + Math.sign(ax - cx || 1) * 360 * turnsX,
-      cy + Math.sign(ay - cy || 1) * 360 * turnsY,
-    ];
-    const anim = el.animate(
-      [
-        { transform: `rotateX(${cx}deg) rotateY(${cy}deg)` },
-        { transform: `rotateX(${to[0]}deg) rotateY(${to[1]}deg)` },
-      ],
-      { duration: 1000, easing: "cubic-bezier(0.08, 0.75, 0.12, 1)", fill: "forwards" }
-    );
-    curRef.current = to;
-    return () => anim.cancel();
+    const [rx, ry] = curRef.current;
+
+    const norm = (v: number) => ((v % 360) + 360) % 360;
+    const dir = (delta: number, dirSign: number) =>
+      dirSign > 0 ? (delta >= 0 ? delta : delta + 360) : delta <= 0 ? delta : delta - 360;
+    const dx = norm(ax) - norm(rx);
+    const dy = norm(ay) - norm(ry);
+    const dxS = ((dx + 540) % 360) - 180; // shortest signed delta to the target face
+    const dyS = ((dy + 540) % 360) - 180;
+    const dirX = dxS >= 0 ? 1 : -1;
+    const dirY = dyS >= 0 ? 1 : -1;
+    const extraX = 360 * (2 + Math.floor(Math.random() * 3)); // 2-4 full tumbles
+    const extraY = 360 * (1 + Math.floor(Math.random() * 2));
+    const totalX = dir(dxS, dirX) + extraX;
+    const totalY = dir(dyS, dirY) + extraY;
+
+    const dur = 1150 + Math.random() * 160;
+    const t0 = performance.now();
+    const hopAmp = Math.max(6, s * 0.07);
+    let raf = 0;
+
+    const frame = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const ease = 1 - Math.pow(1 - t, 3.1); // fast launch, natural deceleration
+      const wob = Math.sin(t * Math.PI * 6.5) * Math.max(0, 1 - t * 1.7) * 16; // decaying tumble jitter
+      const hop = Math.abs(Math.sin(t * Math.PI * 5.4)) * Math.max(0, 1 - t * 1.22) * hopAmp;
+      const x = rx + totalX * ease;
+      const y = ry + totalY * ease;
+      el.style.transform = `translate3d(0, ${hop.toFixed(2)}px, 0) rotateX(${(x + wob * 0.9).toFixed(2)}deg) rotateY(${(y - wob * 0.55).toFixed(2)}deg) rotateZ(${(wob * 0.45).toFixed(2)}deg)`;
+      if (t < 1) {
+        raf = requestAnimationFrame(frame);
+      } else {
+        const fx = rx + totalX;
+        const fy = ry + totalY;
+        el.style.transform = `rotateX(${fx}deg) rotateY(${fy}deg)`; // exact server face
+        curRef.current = [fx, fy];
+      }
+    };
+    raf = requestAnimationFrame(frame);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      el.style.transform = `rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spinKey]);
 
@@ -417,11 +451,8 @@ function DiceCube({
       role={interactive ? "button" : undefined}
       aria-label="Roll the dice"
     >
-      {/* soft shadow + bounce layer */}
-      <div
-        className={cn("absolute inset-0", spinKey > 0 && target !== null && "die-bounce")}
-        key={`b${spinKey}`}
-      >
+      {/* soft shadow + bounce layer (hop is simulated inside the rAF roll) */}
+      <div className="absolute inset-0">
         <div
           ref={cubeRef}
           className="absolute"
@@ -629,7 +660,7 @@ export function LudoBoard({
           if (ev.kind === "roll") {
             const dieVal = Number(ev.die ?? 1);
             setDie((d) => ({ face: d.face, spinKey: d.spinKey + 1, target: dieVal }));
-            await sleep(1010);
+            await sleep(1290); // physics roll duration (1150-1310ms) + settle
             setDie((d) => ({ face: dieVal, spinKey: d.spinKey, target: null }));
             await sleep(90);
           } else if (ev.kind === "move") {
@@ -870,15 +901,6 @@ export function LudoBoard({
         {hint}
       </p>
       <style>{`
-        @keyframes dieBounce {
-          0% { transform: translateY(0) scale(1, 1); }
-          22% { transform: translateY(-7%) scale(0.98, 1.03); }
-          48% { transform: translateY(0) scale(1, 1); }
-          62% { transform: translateY(-3.5%) scale(0.99, 1.015); }
-          80% { transform: translateY(0) scale(1.05, 0.96); }
-          100% { transform: translateY(0) scale(1, 1); }
-        }
-        .die-bounce { animation: dieBounce 1s cubic-bezier(0.3, 0.1, 0.3, 1) both; }
         @keyframes diePulse {
           0%, 100% { filter: drop-shadow(0 0 2px rgba(255,255,255,0)); }
           50% { filter: drop-shadow(0 0 14px rgba(139,92,246,0.85)); }
