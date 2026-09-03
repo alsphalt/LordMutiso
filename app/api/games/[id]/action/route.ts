@@ -131,6 +131,7 @@ export const POST = handle(async (req, { params }) => {
           fromR: outcome.move.fromR,
           toR: outcome.move.toR,
           capture: outcome.captured,
+          capturedTokens: outcome.capturedList,
           die: dieUsed,
           playerNumber: mySeat!.playerNumber,
           extraRoll: outcome.extraRoll,

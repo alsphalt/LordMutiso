@@ -201,10 +201,16 @@ export function rollLudo(s: LudoState, die: number): LudoRollOutcome {
   return { die, legal, autoPassed: false };
 }
 
+export interface LudoCaptured {
+  player: number;
+  token: number;
+}
+
 export interface LudoMoveOutcome {
   result: LudoResult;
   move: LudoMove;
   captured: boolean;
+  capturedList: LudoCaptured[];
   extraRoll: boolean;
 }
 
@@ -217,7 +223,7 @@ export function moveLudoToken(s: LudoState, token: number): LudoMoveOutcome {
   const p = s.turn;
   const colorIndex = p - 1;
   const captured = mv.capture;
-  let capturedTokens = 0;
+  const capturedList: LudoCaptured[] = [];
 
   // Apply the move.
   s.tokens[p][token] = mv.toR;
@@ -230,7 +236,7 @@ export function moveLudoToken(s: LudoState, token: number): LudoMoveOutcome {
       const opp = Math.floor(enc / 10);
       const oppToken = enc % 10;
       s.tokens[opp][oppToken] = -1; // back HOME
-      capturedTokens += 1;
+      capturedList.push({ player: opp, token: oppToken });
     }
   }
 
@@ -241,7 +247,7 @@ export function moveLudoToken(s: LudoState, token: number): LudoMoveOutcome {
     s.done.push(p);
     result = { done: true, winner: p, reason: "finish" };
     s.die = null;
-    return { result, move: mv, captured: capturedTokens > 0, extraRoll: false };
+    return { result, move: mv, captured: capturedList.length > 0, capturedList, extraRoll: false };
   }
 
   // Extra roll on a 6 (bounded), then continue with the same player.
@@ -255,7 +261,7 @@ export function moveLudoToken(s: LudoState, token: number): LudoMoveOutcome {
     s.consecutiveSixes = 0;
     passTurn(s);
   }
-  return { result, move: mv, captured: capturedTokens > 0, extraRoll };
+  return { result, move: mv, captured: capturedList.length > 0, capturedList, extraRoll };
 }
 
 /** Handle a resignation / drop-out. Returns the game-end result when one remains. */
