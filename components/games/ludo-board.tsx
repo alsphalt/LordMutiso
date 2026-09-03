@@ -323,8 +323,10 @@ function DiceCube({
   onRoll: () => void;
 }) {
   const cubeRef = React.useRef<HTMLDivElement>(null);
+  const shadowRef = React.useRef<HTMLDivElement>(null);
   const curRef = React.useRef<[number, number]>([0, 0]);
   const pressRef = React.useRef<{ x: number; y: number } | null>(null);
+  const [pressed, setPressed] = React.useState(false);
   const s = sizePx || 96;
   const h = s / 2;
 
@@ -337,6 +339,7 @@ function DiceCube({
     ["top", "rotateX(90deg)", 2],
     ["bottom", "rotateX(-90deg)", 5],
   ];
+  const faceRadius = Math.max(6, Math.round(s * 0.13));
   for (const [name, rot, num] of defs) {
     const dots = FACE_DOTS[num] ?? [];
     faceNodes.push(
@@ -346,85 +349,154 @@ function DiceCube({
         style={{
           inset: 0,
           transform: `${rot} translateZ(${h}px)`,
-          background: "linear-gradient(145deg,#ffffff,#e8e2d2)",
-          border: `1px solid ${alpha("#7c6236", 0.55)}`,
-          borderRadius: 6,
+          borderRadius: faceRadius,
+          background:
+            "radial-gradient(circle at 30% 24%, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 48%), linear-gradient(160deg,#ffffff 0%,#f8f8fc 50%,#e7e7f0 100%)",
+          border: "1px solid rgba(35,38,58,0.14)",
+          boxShadow: "inset 0 -3px 6px rgba(130,135,160,0.22), inset 0 2px 3px rgba(255,255,255,0.9)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          overflow: "hidden",
         }}
       >
-        <div className="grid h-full w-full grid-cols-3 grid-rows-3 p-[14%]">
+        <div className="grid h-full w-full grid-cols-3 grid-rows-3 p-[13%]">
           {Array.from({ length: 9 }).map((_, i) => (
             <div key={i} className="flex items-center justify-center">
               {dots.includes(i) && (
                 <span
-                  className="block aspect-square w-[80%] rounded-full"
-                  style={{ background: "#2b2b31", boxShadow: "inset 0 -1px 1px rgba(0,0,0,0.4)" }}
+                  className="block aspect-square w-[86%] rounded-full"
+                  style={{
+                    background: "radial-gradient(circle at 38% 32%, #43485a 0%, #1c1f29 62%, #101219 100%)",
+                    boxShadow: "inset 0 1px 1px rgba(255,255,255,0.28), 0 1px 2px rgba(0,0,0,0.35)",
+                  }}
                 />
               )}
             </div>
           ))}
         </div>
+        {/* glossy sheen */}
+        <span
+          className="pointer-events-none absolute inset-0"
+          style={{
+            borderRadius: faceRadius,
+            background:
+              "linear-gradient(115deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.12) 26%, rgba(255,255,255,0) 44%), linear-gradient(295deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 30%)",
+          }}
+        />
       </div>
     );
   }
 
   /**
-   * Physics-style roll — lightweight rAF simulation.
-   * A random angular impulse tumbles the cube; a damped oscillation and a
-   * bouncing hop give it a physical feel; the rotation curve decelerates and
-   * converges EXACTLY on the server-confirmed face (extra full turns never
-   * change the final orientation). No WebGL/heavy libraries: one DOM element,
-   * GPU-only transform updates, ideal for low-end phones.
+   * Thrown-dice physics roll — lightweight rAF simulation, GPU-only transforms.
+   *
+   * The die LIFTS, is THROWN slightly forward/up, TUMBLES fast on X/Y/Z,
+   * BOUNCES on the floor and against the bounds of its small allowed area,
+   * then decelerates and settles EXACTLY on the server-confirmed face.
+   * No WebGL / physics libraries: two DOM elements (cube + ground shadow),
+   * ideal for low-end phones.
    */
   React.useEffect(() => {
     const el = cubeRef.current;
+    const sh = shadowRef.current;
     if (!el || spinKey === 0) return;
     const [ax, ay] = FACE_ORIENT[target ?? 1] ?? [0, 0];
-    const [rx, ry] = curRef.current;
+    const [rx0, ry0] = curRef.current;
 
     const norm = (v: number) => ((v % 360) + 360) % 360;
     const dir = (delta: number, dirSign: number) =>
       dirSign > 0 ? (delta >= 0 ? delta : delta + 360) : delta <= 0 ? delta : delta - 360;
-    const dx = norm(ax) - norm(rx);
-    const dy = norm(ay) - norm(ry);
+    const dx = norm(ax) - norm(rx0);
+    const dy = norm(ay) - norm(ry0);
     const dxS = ((dx + 540) % 360) - 180; // shortest signed delta to the target face
     const dyS = ((dy + 540) % 360) - 180;
     const dirX = dxS >= 0 ? 1 : -1;
     const dirY = dyS >= 0 ? 1 : -1;
-    const extraX = 360 * (2 + Math.floor(Math.random() * 3)); // 2-4 full tumbles
-    const extraY = 360 * (1 + Math.floor(Math.random() * 2));
-    const totalX = dir(dxS, dirX) + extraX;
-    const totalY = dir(dyS, dirY) + extraY;
+    const totalX = dir(dxS, dirX) + 360 * (2 + Math.floor(Math.random() * 3)); // 2-4 full tumbles
+    const totalY = dir(dyS, dirY) + 360 * (1 + Math.floor(Math.random() * 2));
 
-    const dur = 1150 + Math.random() * 160;
-    const t0 = performance.now();
-    const hopAmp = Math.max(6, s * 0.07);
+    // Rotation curve (fast start, natural deceleration) then hold the exact face.
+    const angDur = 760 + Math.random() * 150;
+    const tAng0 = performance.now();
+
+    // ---------- positional physics (px, local to the die area) ----------
+    const sc = s / 96;
+    const G = 1600 * sc; // gravity
+    let x = 0; // horizontal throw (bounded by walls below)
+    let y = 0; // 0 = resting on the board, negative = up
+    let vy = -(7.5 + Math.random() * 2.4) * s; // lift: throw upward
+    let vx = (0.55 + Math.random() * 0.9) * s * (Math.random() < 0.5 ? 1 : -1); // small forward drift
+    const wall = s * 0.92; // allowed area radius — the die never leaves it
+    let bounces = 0;
+    let resting = false;
     let raf = 0;
+    let prev = performance.now();
 
     const frame = (now: number) => {
-      const t = Math.min(1, (now - t0) / dur);
-      const ease = 1 - Math.pow(1 - t, 3.1); // fast launch, natural deceleration
-      const wob = Math.sin(t * Math.PI * 6.5) * Math.max(0, 1 - t * 1.7) * 16; // decaying tumble jitter
-      const hop = Math.abs(Math.sin(t * Math.PI * 5.4)) * Math.max(0, 1 - t * 1.22) * hopAmp;
-      const x = rx + totalX * ease;
-      const y = ry + totalY * ease;
-      el.style.transform = `translate3d(0, ${hop.toFixed(2)}px, 0) rotateX(${(x + wob * 0.9).toFixed(2)}deg) rotateY(${(y - wob * 0.55).toFixed(2)}deg) rotateZ(${(wob * 0.45).toFixed(2)}deg)`;
-      if (t < 1) {
+      const dt = Math.min(0.033, (now - prev) / 1000);
+      prev = now;
+
+      // integrate position
+      vy += G * dt;
+      y += vy * dt;
+      x += vx * dt;
+
+      // wall bounce (stay inside the allowed board area)
+      if (x > wall) { x = wall; vx = -vx * 0.5; }
+      else if (x < -wall) { x = -wall; vx = -vx * 0.5; }
+      // floor bounce with restitution, then rest
+      if (y >= 0) {
+        y = 0;
+        if (!resting && bounces < 3 && vy > 120 * sc) {
+          vy = -vy * 0.38;
+          vx *= 0.72;
+          bounces++;
+        } else {
+          vy = 0;
+          vx = 0;
+          resting = true;
+        }
+      } else {
+        vx *= Math.pow(0.55, dt); // air drag on drift
+      }
+
+      // rotation: eased tumble + decaying multi-axis wobble
+      const ta = Math.min(1, (now - tAng0) / angDur);
+      const ease = 1 - Math.pow(1 - ta, 3.2);
+      const wob = Math.sin(ta * Math.PI * 6.8) * Math.max(0, 1 - ta * 1.9) * 18;
+      const rx = rx0 + totalX * ease;
+      const ry = ry0 + totalY * ease;
+
+      // soft ground shadow reacts to height
+      if (sh) {
+        const lift = Math.max(0, Math.min(1, -y / (s * 1.05)));
+        const shScale = 1 - 0.22 * lift;
+        sh.style.opacity = String(0.42 - 0.24 * lift);
+        sh.style.transform = `translate(-50%, 0) translateX(${x.toFixed(1)}px) scale(${shScale.toFixed(3)})`;
+      }
+
+      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) rotateX(${(rx + wob * 0.85).toFixed(2)}deg) rotateY(${(ry - wob * 0.5).toFixed(2)}deg) rotateZ(${(wob * 0.42).toFixed(2)}deg)`;
+
+      if (ta < 1 || !resting) {
         raf = requestAnimationFrame(frame);
       } else {
-        const fx = rx + totalX;
-        const fy = ry + totalY;
-        el.style.transform = `rotateX(${fx}deg) rotateY(${fy}deg)`; // exact server face
+        // settle exactly on the server face
+        const fx = rx0 + totalX;
+        const fy = ry0 + totalY;
         curRef.current = [fx, fy];
+        el.style.transform = `translate3d(0, 0, 0) rotateX(${fx}deg) rotateY(${fy}deg)`;
+        if (sh) {
+          sh.style.opacity = "0.42";
+          sh.style.transform = "translate(-50%, 0) scale(1)";
+        }
       }
     };
     raf = requestAnimationFrame(frame);
 
     return () => {
       cancelAnimationFrame(raf);
-      el.style.transform = `rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`;
+      el.style.transform = `translate3d(0,0,0) rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spinKey]);
@@ -432,50 +504,87 @@ function DiceCube({
   const onPointerDown = (e: React.PointerEvent) => {
     if (!interactive) return;
     pressRef.current = { x: e.clientX, y: e.clientY };
+    setPressed(true);
   };
   const onPointerUp = (e: React.PointerEvent) => {
+    setPressed(false);
     if (!interactive || !pressRef.current) return;
     const dx = e.clientX - pressRef.current.x;
     const dy = e.clientY - pressRef.current.y;
     pressRef.current = null;
-    // A tap or a swipe (any direction) rolls the die.
-    if (Math.hypot(dx, dy) < 64) onRoll();
+    // A tap OR a swipe (any direction) throws the die.
+    if (Math.hypot(dx, dy) < 96) onRoll();
   };
+  const onPointerCancel = () => {
+    setPressed(false);
+    pressRef.current = null;
+  };
+
+  const idle = !dim && spinKey === 0 && face !== null;
 
   return (
     <div
-      className={cn("relative", !interactive && "pointer-events-none")}
-      style={{ width: s, height: s, perspective: s * 2.4 }}
+      className={cn(
+        "relative transition-transform duration-100",
+        !interactive && "pointer-events-none",
+        pressed && interactive && "scale-90"
+      )}
+      style={{ width: s, height: s, perspective: s * 2.8 }}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       role={interactive ? "button" : undefined}
       aria-label="Roll the dice"
     >
-      {/* soft shadow + bounce layer (hop is simulated inside the rAF roll) */}
-      <div className="absolute inset-0">
+      {/* soft moving ground shadow */}
+      <div
+        ref={shadowRef}
+        className="pointer-events-none absolute rounded-[50%]"
+        style={{
+          left: "50%",
+          top: "86%",
+          width: s * 0.96,
+          height: s * 0.22,
+          transform: "translate(-50%, 0)",
+          opacity: dim ? 0.2 : 0.42,
+          background: "radial-gradient(ellipse at center, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 70%)",
+          filter: "blur(2px)",
+        }}
+      />
+
+      {/* idle float wrapper (only when waiting, never during a roll) */}
+      <div
+        className={cn("absolute inset-0", idle && "die-float", dim && spinKey === 0 && "opacity-70")}
+        style={{ transition: "opacity .25s" }}
+      >
         <div
           ref={cubeRef}
           className="absolute"
           style={{
             width: s,
             height: s,
+            left: "50%",
+            top: "50%",
+            marginLeft: -s / 2,
+            marginTop: -s / 2,
             transformStyle: "preserve-3d",
             transform: `rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`,
-            opacity: dim ? 0.55 : 1,
-            filter: dim ? undefined : `drop-shadow(0 10px 10px rgba(0,0,0,0.35))`,
-            transition: "opacity .2s",
           }}
         >
           {faceNodes}
           {face === null && (
             <div
-              className="absolute flex items-center justify-center rounded-md font-black text-slate-600"
+              className="absolute flex items-center justify-center font-black"
               style={{
                 inset: 0,
                 transform: `translateZ(${h}px)`,
-                background: "linear-gradient(145deg,#fff,#e8e2d2)",
-                border: `1px solid ${alpha("#7c6236", 0.55)}`,
-                fontSize: s * 0.45,
+                borderRadius: Math.max(6, Math.round(s * 0.13)),
+                background:
+                  "radial-gradient(circle at 30% 24%, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 48%), linear-gradient(160deg,#ffffff 0%,#f8f8fc 50%,#e7e7f0 100%)",
+                border: "1px solid rgba(35,38,58,0.14)",
+                boxShadow: "inset 0 -3px 6px rgba(130,135,160,0.22)",
+                fontSize: s * 0.5,
+                color: "#34384a",
               }}
             >
               ?
@@ -906,6 +1015,11 @@ export function LudoBoard({
           50% { filter: drop-shadow(0 0 14px rgba(139,92,246,0.85)); }
         }
         .die-pulse { animation: diePulse 1.6s ease-in-out infinite; }
+        @keyframes dieFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-3px); }
+        }
+        .die-float { animation: dieFloat 2.6s ease-in-out infinite; }
         @keyframes fxLand {
           0% { transform: scale(1); }
           40% { transform: scale(1.9); }
