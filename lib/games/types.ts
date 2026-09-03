@@ -82,10 +82,15 @@ export type ActionResult =
   | { ok: true; snapshot?: GameSnapshot; message?: string; redirectId?: string }
   | { ok: false; error: string };
 
-/** Map a player seat index to a game color for a given player count. */
+/**
+ * Map a player seat index to a game color for a given player count.
+ *
+ * Ludo seats sit top-left (1), top-right (2), bottom-right (3), bottom-left (4)
+ * and use the classic reference-board colours: GREEN TL, RED TR, BLUE BR, YELLOW BL.
+ */
 export function colorForSeat(seatIndex: number, gameType: GameTypeName): ColorName {
   if (gameType === "CHESS") return seatIndex === 0 ? "WHITE" : "BLACK";
   if (gameType === "CHECKERS") return seatIndex === 0 ? "WHITE" : "BLACK";
-  const ludoColors: ColorName[] = ["RED", "YELLOW", "GREEN", "BLUE"];
-  return ludoColors[seatIndex] ?? "RED";
+  const ludoColors: ColorName[] = ["GREEN", "RED", "BLUE", "YELLOW"];
+  return ludoColors[seatIndex] ?? "GREEN";
 }

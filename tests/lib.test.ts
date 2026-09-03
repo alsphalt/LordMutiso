@@ -67,7 +67,9 @@ test("elo: winner gains, loser loses; draw shifts slightly", () => {
 test("colorForSeat maps seats deterministically", () => {
   assert.equal(colorForSeat(0, "CHESS"), "WHITE");
   assert.equal(colorForSeat(1, "CHESS"), "BLACK");
-  assert.equal(colorForSeat(0, "LUDO"), "RED");
-  assert.equal(colorForSeat(1, "LUDO"), "YELLOW");
-  assert.equal(colorForSeat(3, "LUDO"), "BLUE");
+  // Ludo classic corners: seat1 GREEN (TL), seat2 RED (TR), seat3 BLUE (BR), seat4 YELLOW (BL)
+  assert.equal(colorForSeat(0, "LUDO"), "GREEN");
+  assert.equal(colorForSeat(1, "LUDO"), "RED");
+  assert.equal(colorForSeat(2, "LUDO"), "BLUE");
+  assert.equal(colorForSeat(3, "LUDO"), "YELLOW");
 });

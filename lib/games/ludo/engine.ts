@@ -64,7 +64,8 @@ export function ludoSafeCells(): Set<number> {
   return safe;
 }
 
-export const LUDO_COLORS: Array<"RED" | "YELLOW" | "GREEN" | "BLUE"> = ["RED", "YELLOW", "GREEN", "BLUE"];
+/** Display order of the classic board: TL GREEN, TR RED, BR BLUE, BL YELLOW. */
+export const LUDO_COLORS: Array<"RED" | "YELLOW" | "GREEN" | "BLUE"> = ["GREEN", "RED", "BLUE", "YELLOW"];
 
 /** Absolute shared-track cell for a relative position, or null when in home column/base. */
 export function ludoAbsCell(colorIndex: number, r: number): number | null {
