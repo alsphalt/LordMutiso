@@ -83,13 +83,14 @@ export async function joinRoom(roomCode: string, userId: string) {
     });
 
     // Notify the previously present players.
-    if (ordered.length > 0) {
+    const existingUsers = ordered.filter((p) => p.userId !== null);
+    if (existingUsers.length > 0) {
       await notifyAll(
-        ordered.map((p) => ({
-          userId: p.userId,
+        existingUsers.map((p) => ({
+          userId: p.userId!,
           type: "PLAYER_JOINED",
           title: "Player joined",
-          body: `${player.user.username} joined the room.`,
+          body: `${player.user!.username} joined the room.`,
           gameId: game.id,
         })),
         tx
@@ -135,16 +136,19 @@ export async function leaveRoom(gameId: string, userId: string) {
     // duel on opposite corners after someone drops out of a bigger room).
     await reapplyLayout(tx, remaining, game.type, remaining.length);
 
-    await notifyAll(
-      remaining.map((p) => ({
-        userId: p.userId,
-        type: "SYSTEM",
-        title: "Player left",
-        body: `${player.user.username} left the room.`,
-        gameId: game.id,
-      })),
-      tx
-    );
+    const remainingUsers = remaining.filter((p) => p.userId !== null);
+    if (remainingUsers.length > 0) {
+      await notifyAll(
+        remainingUsers.map((p) => ({
+          userId: p.userId!,
+          type: "SYSTEM",
+          title: "Player left",
+          body: `${player.user!.username} left the room.`,
+          gameId: game.id,
+        })),
+        tx
+      );
+    }
 
     return { deleted: false };
   });

@@ -1,73 +1,78 @@
-import { Prisma } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { applyFinishedStats } from "@/lib/stats";
 import { notifyAll } from "@/lib/notifications";
 
+export interface FinishOptions {
+  status: "FINISHED" | "DRAW" | "CANCELLED";
+  winnerId: string | null; // winner's user id (null for AI winners / draws)
+  winnerPlayerNumber: number | null; // winning seat number (works for AI seats)
+}
+
 /**
  * Shared atomic finish flow for games.
- * Updates the game status, applies rating changes, and notifies players.
+ * 1. Atomically transitions the game (guard against double-finish).
+ * 2. Applies statistics — ONLINE games update competitive stats + Elo,
+ *    AI practice games only update the AI counters.
+ * 3. Notifies the human players.
  */
 export async function finishGame(
   tx: Prisma.TransactionClient,
   gameId: string,
-  opts: { winnerId: string | null; status: "FINISHED" | "DRAW" | "CANCELLED" }
+  opts: FinishOptions
 ): Promise<boolean> {
-  // 1. Fetch game details needed for stats and notifications
-  const game = await tx.game.findUnique({
-    where: { id: gameId },
-    include: {
-      players: { select: { userId: true, user: { select: { username: true } } } },
-    },
-  });
-
-  if (!game || (game.status !== "WAITING" && game.status !== "PLAYING")) {
-    return false;
-  }
-
-  // 2. Atomic update
-  const updated = await tx.game.updateMany({
+  const transitioned = await tx.game.updateMany({
     where: { id: gameId, status: { in: ["WAITING", "PLAYING"] } },
     data: {
       status: opts.status,
       winnerId: opts.winnerId,
+      winnerPlayerNumber: opts.winnerPlayerNumber,
       endedAt: new Date(),
       currentTurn: null,
     },
   });
+  if (transitioned.count === 0) return false;
 
-  if (updated.count === 0) return false;
+  const game = await tx.game.findUnique({
+    where: { id: gameId },
+    include: { players: true },
+  });
+  if (!game) return false;
 
-  const participantIds = game.players.map((p) => p.userId);
-  const winner = opts.winnerId ? game.players.find((p) => p.userId === opts.winnerId) : null;
-
-  // 3. Stats (only for FINISHED/DRAW if it actually started)
-  if ((opts.status === "FINISHED" || opts.status === "DRAW") && game.startedAt) {
-    await applyFinishedStats(tx, {
-      participantIds,
-      winnerId: opts.winnerId,
-      gameType: game.type,
-    });
+  const started = game.startedAt !== null;
+  if (started && (opts.status === "FINISHED" || opts.status === "DRAW")) {
+    const humans = game.players.filter((p) => p.userId !== null);
+    if (humans.length > 0) {
+      await applyFinishedStats(tx, {
+        participants: humans.map((p) => ({ userId: p.userId!, playerNumber: p.playerNumber })),
+        winnerUserId: opts.winnerId,
+        winnerPlayerNumber: opts.winnerPlayerNumber,
+        gameType: game.type,
+        gameMode: game.gameMode,
+      });
+    }
   }
 
-  // 4. Notifications
-  const body =
-    opts.status === "DRAW"
-      ? "The game ended in a draw."
-      : opts.status === "CANCELLED"
-      ? "The game was cancelled."
-      : winner
-      ? `${winner.user.username} won the game!`
-      : "The game finished.";
-
-  await notifyAll(
-    participantIds.map((uid) => ({
-      userId: uid,
-      type: "GAME_ENDED",
-      title: "Game finished",
-      body,
-      gameId: game.id,
-    })),
-    tx
-  );
+  // Notify human players only.
+  const humans = game.players.filter((p) => p.userId !== null);
+  if (humans.length > 0) {
+    const title = opts.status === "DRAW" ? "Game drawn" : "Game finished";
+    const body =
+      opts.status === "DRAW"
+        ? "The game ended in a draw."
+        : opts.winnerPlayerNumber
+          ? `Seat ${opts.winnerPlayerNumber} won the ${game.type} game.`
+          : `The ${game.type} game has ended.`;
+    await notifyAll(
+      humans.map((p) => ({
+        userId: p.userId!,
+        type: "GAME_ENDED",
+        title,
+        body,
+        gameId: game.id,
+      })),
+      tx
+    );
+  }
 
   return true;
 }

@@ -12,6 +12,7 @@ import { leaveRoom } from "@/lib/server/rooms";
 import { rollLudo, moveLudoToken, resignLudo, createLudoState } from "@/lib/games/ludo/engine";
 import { stepCheckers, resignCheckers, createCheckersState } from "@/lib/games/checkers/engine";
 import { stepChess, resignChess, createChessState, chessTurnSeat } from "@/lib/games/chess/engine";
+import { runAiTurns } from "@/lib/server/ai-run";
 
 export const dynamic = "force-dynamic";
 
@@ -80,13 +81,15 @@ export const POST = handle(async (req, { params }) => {
       }
 
       await notifyAll(
-        game.players.map((p) => ({
-          userId: p.userId,
-          type: "GAME_STARTED",
-          title: "Game started",
-          body: "The game has started!",
-          gameId: game.id,
-        })),
+        game.players
+          .filter((p) => p.userId !== null)
+          .map((p) => ({
+            userId: p.userId!,
+            type: "GAME_STARTED",
+            title: "Game started",
+            body: "The game has started!",
+            gameId: game.id,
+          })),
         tx
       );
     } else if (input.action === "roll") {
@@ -107,10 +110,10 @@ export const POST = handle(async (req, { params }) => {
         },
       });
 
-      // Record move if roll was made (though it's just a roll, the contract says record one move per engine transition)
-      // Wait, contract says: "one GameMove row per engine transition". Roll produces a die.
-      // For Ludo, roll is one step, move is another.
       await recordMove(tx, game.id, mySeat!.id, { kind: "ludo-roll", die, autoPassed });
+
+      // AI reply (e.g. after an auto-passed roll), no-op when it's still the human's turn.
+      if (game.gameMode === "AI") await runAiTurns(tx, game.id);
 
     } else if (input.action === "move") {
       if (game.status !== "PLAYING") throw badRequest("Game not playing");
@@ -176,10 +179,15 @@ export const POST = handle(async (req, { params }) => {
       await recordMove(tx, game.id, mySeat!.id, moveData);
 
       if (result.done) {
+        const winnerSeat = game.players.find((p) => p.playerNumber === result.winner) ?? null;
         await finishGame(tx, game.id, {
-          winnerId: result.winner ? game.players.find(p => p.playerNumber === result.winner)?.userId || null : null,
+          winnerId: winnerSeat?.userId ?? null,
+          winnerPlayerNumber: result.winner ?? null,
           status: result.draw ? "DRAW" : "FINISHED",
         });
+      } else if (game.gameMode === "AI") {
+        // let the AI opponent(s) reply immediately
+        await runAiTurns(tx, game.id);
       }
 
     } else if (input.action === "resign") {
@@ -201,10 +209,15 @@ export const POST = handle(async (req, { params }) => {
       await recordMove(tx, game.id, mySeat!.id, { kind: "resign", playerNumber: mySeat!.playerNumber });
 
       if (result.done) {
+        const winnerSeat = game.players.find((p) => p.playerNumber === result.winner) ?? null;
         await finishGame(tx, game.id, {
-          winnerId: result.winner ? game.players.find(p => p.playerNumber === result.winner)?.userId || null : null,
+          winnerId: winnerSeat?.userId ?? null,
+          winnerPlayerNumber: result.winner ?? null,
           status: result.draw ? "DRAW" : "FINISHED",
         });
+      } else if (game.gameMode === "AI") {
+        // bots finish the match after the human resigns
+        await runAiTurns(tx, game.id);
       }
     }
 
@@ -249,14 +262,18 @@ async function handleRematch(gameId: string, userId: string) {
     const newGame = await tx.game.create({
       data: {
         type: oldGame.type,
+        gameMode: oldGame.gameMode,
+        aiDifficulty: oldGame.aiDifficulty,
         status: "PLAYING",
         createdBy: oldGame.createdBy,
         startedAt: new Date(),
-        currentTurn: 1,
+        currentTurn: Math.min(...oldGame.players.map((p) => p.playerNumber)),
         gameState: JSON.parse(JSON.stringify(initialState)),
         players: {
           create: oldGame.players.map((p) => ({
             userId: p.userId,
+            isAi: p.isAi,
+            botName: p.botName,
             playerNumber: p.playerNumber,
             color: p.color,
           })),
@@ -264,14 +281,20 @@ async function handleRematch(gameId: string, userId: string) {
       },
     });
 
+    if (oldGame.gameMode === "AI") {
+      await runAiTurns(tx, newGame.id);
+    }
+
     await notifyAll(
-      oldGame.players.map((p) => ({
-        userId: p.userId,
-        type: "REMATCH",
-        title: "Rematch started",
-        body: "A rematch has started!",
-        gameId: newGame.id,
-      })),
+      oldGame.players
+        .filter((p) => p.userId !== null)
+        .map((p) => ({
+          userId: p.userId!,
+          type: "REMATCH",
+          title: "Rematch started",
+          body: "A rematch has started!",
+          gameId: newGame.id,
+        })),
       tx
     );
 

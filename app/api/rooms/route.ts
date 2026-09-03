@@ -43,8 +43,8 @@ export const GET = handle(async (req) => {
       maxPlayers: r.maxPlayers,
       players: r.game.players.map((p) => ({
         userId: p.userId,
-        username: p.user.username,
-        image: p.user.image,
+        username: p.user!.username,
+        image: p.user!.image,
         playerNumber: p.playerNumber,
         color: p.color,
       })),
@@ -112,8 +112,8 @@ export const POST = handle(async (req) => {
         maxPlayers: room.maxPlayers,
         players: [{
           userId: player.userId,
-          username: player.user.username,
-          image: player.user.image,
+          username: player.user!.username,
+          image: player.user!.image,
           playerNumber: player.playerNumber,
           color: player.color,
         }],

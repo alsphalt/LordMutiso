@@ -28,6 +28,17 @@ enum GameStatus {
   CANCELLED
 }
 
+enum GameMode {
+  ONLINE // multiplayer with real people
+  AI // practice against computer opponents
+}
+
+enum AiDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
 enum PlayerColor {
   RED
   YELLOW
@@ -99,6 +110,11 @@ model UserStatistics {
   chessWins    Int @default(0)
   checkersWins Int @default(0)
 
+  // Practice (AI) games — kept fully separate from competitive online stats
+  aiGames Int @default(0)
+  aiWins  Int @default(0)
+  aiDraws Int @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -106,13 +122,16 @@ model UserStatistics {
 // ---------- Games ----------
 
 model Game {
-  id        String     @id @default(cuid())
-  type      GameType
-  status    GameStatus @default(WAITING)
-  createdBy String
-  creator   User       @relation("GameCreator", fields: [createdBy], references: [id], onDelete: Restrict)
-  winnerId  String?
-  winner    User?      @relation("GameWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  id                 String        @id @default(cuid())
+  type               GameType
+  gameMode           GameMode      @default(ONLINE)
+  aiDifficulty       AiDifficulty? // difficulty of the AI opponents in AI-mode games
+  status             GameStatus    @default(WAITING)
+  createdBy          String
+  creator            User          @relation("GameCreator", fields: [createdBy], references: [id], onDelete: Restrict)
+  winnerId           String?
+  winner             User?         @relation("GameWinner", fields: [winnerId], references: [id], onDelete: SetNull)
+  winnerPlayerNumber Int? // seat number of the winner (works for AI seats too)
 
   // JSON board/game state (authoritative, maintained server-side only)
   gameState   Json @default("{}")
@@ -139,9 +158,11 @@ model GamePlayer {
   id           String      @id @default(cuid())
   gameId       String
   game         Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  userId       String
-  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  playerNumber Int // 1-based seat
+  userId       String? // null for AI seats
+  user         User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAi         Boolean     @default(false)
+  botName      String? // display name for AI seats (e.g. "Bot · Medium")
+  playerNumber Int // 1-based seat (board corner slot for Ludo)
   color        PlayerColor
   score        Int         @default(0)
   joinedAt     DateTime    @default(now())

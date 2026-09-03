@@ -15,7 +15,7 @@
     "db:validate": "prisma validate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "node --import tsx --test tests/engines.test.ts tests/lib.test.ts tests/db.test.ts"
+    "test": "node --import tsx --test tests/engines.test.ts tests/lib.test.ts tests/ai.test.ts tests/db.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

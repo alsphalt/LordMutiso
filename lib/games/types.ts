@@ -28,21 +28,28 @@ export type GameStatusName = "WAITING" | "PLAYING" | "FINISHED" | "DRAW" | "CANC
 
 export interface GamePlayerDTO {
   id: string;
-  userId: string;
-  username: string;
+  userId: string | null; // null for AI seats
+  username: string; // display name (bot name for AI seats)
   image: string | null;
+  isAi: boolean;
   playerNumber: number;
   color: ColorName;
   score: number;
   joinedAt: string;
 }
 
+export type GameModeName = "ONLINE" | "AI";
+export type AiDifficultyName = "EASY" | "MEDIUM" | "HARD";
+
 export interface GameDTO {
   id: string;
   type: GameTypeName;
+  gameMode: GameModeName;
+  aiDifficulty: AiDifficultyName | null;
   status: GameStatusName;
   createdBy: string;
   winnerId: string | null;
+  winnerPlayerNumber: number | null;
   currentTurn: number | null;
   roomCode: string | null;
   createdAt: string;
@@ -114,6 +121,11 @@ export function ludoSeatAssignment(totalSeats: number, index: number): SeatAssig
     playerNumber: index + 1,
     color: LUDO_CLASSIC_COLORS[index] ?? "GREEN",
   };
+}
+
+/** Colours offered for a Ludo game with `totalSeats` players, in seat order. */
+export function ludoColorsFor(totalSeats: number): ColorName[] {
+  return Array.from({ length: totalSeats }, (_, i) => ludoSeatAssignment(totalSeats, i).color);
 }
 
 export function seatAssignment(

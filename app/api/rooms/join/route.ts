@@ -23,8 +23,8 @@ export const POST = handle(async (req) => {
       maxPlayers: room.maxPlayers,
       players: room.game.players.map((p) => ({
         userId: p.userId,
-        username: p.user.username,
-        image: p.user.image,
+        username: p.user!.username,
+        image: p.user!.image,
         playerNumber: p.playerNumber,
         color: p.color,
       })),

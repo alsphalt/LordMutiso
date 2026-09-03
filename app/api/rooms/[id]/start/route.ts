@@ -51,13 +51,15 @@ export const POST = handle(async (req, { params }) => {
     }
 
     await notifyAll(
-      game.players.map((p) => ({
-        userId: p.userId,
-        type: "GAME_STARTED",
-        title: "Game started",
-        body: `The ${game.type.toLowerCase()} game has started!`,
-        gameId: game.id,
-      })),
+      game.players
+        .filter((p) => p.userId !== null)
+        .map((p) => ({
+          userId: p.userId!,
+          type: "GAME_STARTED",
+          title: "Game started",
+          body: `The ${game.type.toLowerCase()} game has started!`,
+          gameId: game.id,
+        })),
       tx
     );
   });

@@ -6,6 +6,7 @@ import type { GameSnapshot, MoveDTO } from "@/lib/games/types";
  * Build the client-facing snapshot of a game for `viewerId`.
  * Viewers must be a player or the game creator; everyone else is forbidden.
  * All data comes straight from Neon — this is what reconnection uses.
+ * AI seats (no user row) fall back to their stored bot name.
  */
 export async function buildGameSnapshot(gameId: string, viewerId: string): Promise<GameSnapshot> {
   const game = await prisma.game.findUnique({
@@ -37,8 +38,9 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
   const seats = game.players.map((p) => ({
     id: p.id,
     userId: p.userId,
-    username: p.user.username,
-    image: p.user.image,
+    username: p.user?.username ?? p.botName ?? "AI",
+    image: p.user?.image ?? null,
+    isAi: p.isAi,
     playerNumber: p.playerNumber,
     color: p.color,
     score: p.score,
@@ -50,7 +52,7 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
     moveNumber: m.moveNumber,
     playerId: m.playerId,
     playerNumber: m.player.playerNumber,
-    username: m.player.user.username,
+    username: m.player.user?.username ?? m.player.botName ?? "AI",
     moveData: m.moveData,
     createdAt: m.createdAt.toISOString(),
   }));
@@ -62,9 +64,12 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
     game: {
       id: game.id,
       type: game.type,
+      gameMode: game.gameMode,
+      aiDifficulty: game.aiDifficulty,
       status: game.status,
       createdBy: game.createdBy,
       winnerId: game.winnerId,
+      winnerPlayerNumber: game.winnerPlayerNumber,
       currentTurn: game.currentTurn,
       roomCode: game.room?.roomCode ?? null,
       createdAt: game.createdAt.toISOString(),

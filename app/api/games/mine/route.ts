@@ -26,10 +26,11 @@ export const GET = handle(async () => {
     games: games.map((g) => ({
       id: g.id,
       type: g.type,
+      gameMode: g.gameMode,
       status: g.status,
       roomCode: g.room?.roomCode ?? null,
       createdAt: g.createdAt.toISOString(),
-      seats: g.players.map((p) => p.user.username),
+      seats: g.players.map((p) => p.user?.username ?? p.botName ?? "AI"),
     })),
   });
 });
