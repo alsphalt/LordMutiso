@@ -644,6 +644,7 @@ export function LudoBoard({
 
   const queueRef = React.useRef<Array<Record<string, unknown>>>([]);
   const lastAppliedRef = React.useRef(0);
+  const initedRef = React.useRef(false);
   const busyRef = React.useRef(false);
   const pumpBusyRef = React.useRef(false);
   const mountedRef = React.useRef(true);
@@ -849,6 +850,18 @@ export function LudoBoard({
   }, [syncFromState]);
 
   React.useEffect(() => {
+    // First snapshot = just restore the board silently. NEVER replay history
+    // (that caused the dice/pieces to keep animating on their own after a
+    // refresh or reconnect). Only NEW confirmed moves are animated.
+    if (!initedRef.current) {
+      initedRef.current = true;
+      lastAppliedRef.current = snapshot.recentMoves.reduce(
+        (m, x) => Math.max(m, x.moveNumber),
+        0
+      );
+      queueRef.current = [];
+      return;
+    }
     enqueueNewMoves();
     void pump();
     // eslint-disable-next-line react-hooks/exhaustive-deps
