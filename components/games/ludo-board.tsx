@@ -313,6 +313,7 @@ function DiceCube({
   interactive,
   dim,
   onRoll,
+  travelHalf,
 }: {
   sizePx: number;
   face: number | null;
@@ -321,6 +322,8 @@ function DiceCube({
   interactive: boolean;
   dim: boolean;
   onRoll: () => void;
+  /** Max distance the die may travel from the board centre (px). */
+  travelHalf?: number;
 }) {
   const cubeRef = React.useRef<HTMLDivElement>(null);
   const shadowRef = React.useRef<HTMLDivElement>(null);
@@ -428,7 +431,11 @@ function DiceCube({
     // ---------- linear physics (delta time; units scale with die size only) ----------
     const sc = s / 96;
     const G = 2100 * sc; // gravity (px/s²)
-    const half = s * 0.5; // allowed area half-extent — the die never leaves it
+    // Allowed travel: the whole board when a size is passed in (die can roll
+    // to every corner/side and bounce off the board edge), otherwise a small
+    // centre area as a safe fallback.
+    const travelX = travelHalf ?? s * 0.55;
+    const travelU = travelHalf ?? s * 0.5;
     let px = 0; // horizontal position (screen x)
     let pu = 0; // up-board position (screen -y / board depth)
     let h = 0; // height above the board (screen +z toward viewer)
@@ -450,10 +457,12 @@ function DiceCube({
     const distFrac = glen / s; // measured in die-sizes -> screen-size independent
     const velFrac = gspd / (s * 12);
     const power = Math.min(1.55, 0.5 + distFrac * 0.42 + velFrac * 0.5);
-    const throwV = s * (0.55 + 0.8 * power);
+    // A real swipe throws across the board (corners/sides reachable); a tap
+    // gives a short local toss so it never flies off on tiny taps.
+    const throwV = isSwipe ? s * (1.0 + 2.4 * power) : s * (0.28 + 0.3 * power);
     vx = dxU * throwV;
-    vu = dyU * throwV * 0.85;
-    vz = (1.6 + 0.9 * power) * s * (dyU < 0 ? 1.15 : 1); // upward toss
+    vu = dyU * throwV * 0.9;
+    vz = (1.5 + 0.8 * power) * s * (dyU < 0 ? 1.15 : 1); // upward toss
     const wallRest = 0.62; // wall/edge energy retained (normal reflection)
     const floorRest = 0.44; // vertical restitution
     const maxT = 1.9; // hard safety cap
@@ -476,19 +485,20 @@ function DiceCube({
       px += vx * dt;
       pu += vu * dt;
 
-      // Wall collisions: reflect along the collision normal, lose energy.
-      if (px > half) { px = half; vx = -vx * wallRest; }
-      else if (px < -half) { px = -half; vx = -vx * wallRest; }
-      if (pu > half * 0.9) { pu = half * 0.9; vu = -vu * wallRest; }
-      else if (pu < -half * 0.9) { pu = -half * 0.9; vu = -vu * wallRest; }
+      // Wall collisions (board edges): reflect along the collision normal,
+      // lose energy, allow several bounces while crossing the board.
+      if (px > travelX) { px = travelX; vx = -vx * wallRest; }
+      else if (px < -travelX) { px = -travelX; vx = -vx * wallRest; }
+      if (pu > travelU) { pu = travelU; vu = -vu * wallRest; }
+      else if (pu < -travelU) { pu = -travelU; vu = -vu * wallRest; }
 
       // Floor (board surface): bounce while energetic, then keep sliding.
       if (h <= 0) {
         h = 0;
         if (vz < -90 * sc) {
           vz = -vz * floorRest; // small believable bounce
-          vx *= 0.8;
-          vu *= 0.8;
+          vx *= 0.86;
+          vu *= 0.86;
         } else {
           vz = 0;
           if (Math.abs(vx) < s * 0.4 && Math.abs(vu) < s * 0.4) {
@@ -498,8 +508,9 @@ function DiceCube({
         }
       }
 
-      // Frame-rate independent friction (stronger when rolling on the board).
-      const groundFric = h === 0 ? Math.pow(0.12, dt) : Math.pow(0.45, dt);
+      // Frame-rate independent friction (rolling friction on the board is
+      // light enough to glide across; air drag is weak while airborne).
+      const groundFric = h === 0 ? Math.pow(0.5, dt) : Math.pow(0.88, dt);
       vx *= groundFric;
       vu *= groundFric;
 
@@ -742,8 +753,8 @@ export function LudoBoard({
   }, [seatByPn]);
 
   const cellPx = boardW / GRID;
-  const tokenPx = cellPx * 0.92;
-  const homeTokenPx = cellPx * 0.8;
+  const tokenPx = cellPx * 0.86;
+  const homeTokenPx = cellPx * 0.74;
   const dieSizePx = Math.min(Math.max(boardW * 0.135, 60), 104);
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
@@ -1076,6 +1087,7 @@ export function LudoBoard({
           >
             <DiceCube
               sizePx={dieSizePx}
+              travelHalf={boardW / 2 - dieSizePx * 1.15}
               face={die.face}
               spinKey={die.spinKey}
               target={die.target}

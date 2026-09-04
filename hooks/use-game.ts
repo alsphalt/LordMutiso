@@ -64,10 +64,11 @@ export function useGame(gameId: string) {
     return () => clearInterval(interval);
   }, []);
 
-  // AI "thinking" delay: whenever it is an AI seat's turn, wait ~3 seconds
-  // before asking the server to execute the AI's move. Watchdog approach so
-  // polling never restarts the countdown, one request per turn, and
-  // reconnect/refresh re-arms it automatically.
+  // AI "thinking" delay: whenever it is an AI seat's turn, wait a short
+  // moment (1s — bots play fast) before asking the server to execute the
+  // AI's move. Watchdog approach so polling never restarts the countdown,
+  // one request per turn, and reconnect/refresh re-arms it automatically.
+  const AI_THINK_DELAY_MS = 1000;
   useEffect(() => {
     const armedKey = { current: "" };
     const armedAt = { current: 0 };
@@ -90,7 +91,7 @@ export function useGame(gameId: string) {
         armedAt.current = Date.now();
         return;
       }
-      if (Date.now() - armedAt.current >= 3000) {
+      if (Date.now() - armedAt.current >= AI_THINK_DELAY_MS) {
         firedKey.current = key;
         armedKey.current = "";
         api(`/api/games/${gameId}/ai-turn`, { method: "POST" }).catch(() => {

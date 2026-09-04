@@ -14,6 +14,7 @@ import { MoveHistory } from "./move-history";
 import { LudoBoard } from "./ludo-board";
 import { ChessBoard } from "./chess-board";
 import { CheckersBoard } from "./checkers-board";
+import { IdleAutoplay } from "./idle-autoplay";
 import { GAME_TYPES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -162,6 +163,8 @@ export function GameShell({ gameId }: GameShellProps) {
 
   return (
     <div className="min-h-screen bg-arena-gradient flex flex-col h-screen overflow-hidden">
+      {/* Auto-play after 15s of inactivity on the player's turn */}
+      <IdleAutoplay snapshot={snapshot} act={act} />
       {/* Play Header */}
       <header className="h-14 shrink-0 flex items-center justify-between px-4 border-b border-white/10 bg-black/40 backdrop-blur-xl z-20">
         <div className="flex items-center gap-3">
