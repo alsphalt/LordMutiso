@@ -28,36 +28,84 @@ interface LudoChoice {
 
 export function chooseLudoMove(state: LudoState, player: number, legal: LudoMove[], difficulty: AiDifficulty): number | null {
   if (legal.length === 0) return null;
-  if (difficulty === "EASY" && rand() < 0.35) {
+
+  // Difficulty flavour: Easy makes reasonable-but-random choices, Medium is
+  // mostly smart with occasional mistakes, Hard nearly always picks the best.
+  if (difficulty === "EASY" && rand() < 0.45) {
     return legal[Math.floor(rand() * legal.length)].token;
   }
 
+  const safeAbs = safeAbsSet();
   const scores = legal.map((m): LudoChoice => {
     let s = 0;
-    if (m.kind === "finish") s += 90;
-    if (m.capture) s += 70;
-    if (m.kind === "home") s += 40 + m.toR; // advance inside home column
-    if (m.kind === "enter") s += 55;
-    if (m.kind === "move") {
-      s += m.toR; // distance already travelled
-      // avoid landing on a square an opponent can capture next turn
+    // P1. Finish a piece — the strongest possible move.
+    if (m.kind === "finish") s += 100;
+    // P2. Capture the human's piece.
+    if (m.capture) s += 75;
+    // P3. Protect: landing ON a safe square keeps the piece uncatchable.
+    if (m.kind === "enter" || m.kind === "move") {
       const abs = ((player - 1) * 13 + m.toR) % 52;
-      for (const opp of state.players) {
-        if (opp === player) continue;
-        const oAbs = (state.tokens[opp] ?? []).map((r, i) => (r >= 0 && r <= 50 ? { r, i } : null)).filter(Boolean) as Array<{ r: number; i: number }>;
-        for (const o of oAbs) {
-          const oa = ((opp - 1) * 13 + o.r) % 52;
-          const d = (abs - oa + 52) % 52; // cells the opponent is behind me
-          if (d > 0 && d <= 6) s -= 18; // within striking distance
+      if (safeAbs.has(abs)) s += 26;
+    }
+    // P4. Bring a piece out of home (only possible with a 6 anyway).
+    if (m.kind === "enter") s += 50;
+    // P5. Progress: enter the private home column and advance toward home.
+    if (m.kind === "home") s += 40 + (m.toR - 51) * 3;
+    if (m.kind === "move") s += Math.min(m.toR, 40) * 1.1;
+
+    // P6. Avoid exposing pieces: if an opponent is 1-6 cells behind the
+    // landing square they can capture it on their next turn.
+    if (m.kind === "move" || m.kind === "enter") {
+      const abs = ((player - 1) * 13 + m.toR) % 52;
+      if (!safeAbs.has(abs)) {
+        let threat = 0;
+        for (const opp of state.players) {
+          if (opp === player) continue;
+          const tokens = state.tokens[opp] ?? [];
+          for (const r of tokens) {
+            if (r < 0 || r > 50) continue;
+            const oa = ((opp - 1) * 13 + r) % 52;
+            const behind = (abs - oa + 52) % 52; // how many cells the opponent is behind
+            if (behind > 0 && behind <= 6) threat++;
+          }
         }
+        s -= Math.min(threat, 3) * 16;
       }
     }
     return { token: m.token, score: s };
   });
 
   scores.sort((a, b) => b.score - a.score);
-  if (difficulty === "HARD" || rand() < 0.85) return scores[0].token;
-  return scores[Math.min(1, scores.length - 1)].token; // MEDIUM: sometimes 2nd best
+  const best = scores[0].score;
+  const nearBest = scores.filter((x) => best - x.score <= 8); // near-equal group
+
+  if (difficulty === "HARD") {
+    // Almost always the best; when several moves are near-equal, pick
+    // randomly so the bot isn't predictable.
+    if (rand() < 0.9 && nearBest.length > 0) return nearBest[Math.floor(rand() * nearBest.length)].token;
+    return best === scores[0].score ? scores[0].token : scores[1].token;
+  }
+  if (difficulty === "MEDIUM") {
+    const pool = scores.slice(0, Math.min(3, scores.length));
+    if (rand() < 0.72) return nearBest[Math.floor(rand() * nearBest.length)].token;
+    return pool[Math.floor(rand() * pool.length)].token; // occasional imperfect pick
+  }
+  // EASY
+  const pool = scores.slice(0, Math.min(3, scores.length));
+  return pool[Math.floor(rand() * pool.length)].token;
+}
+
+/** Safe/star squares shared by every Ludo player (same set the engine uses). */
+let cachedSafe: Set<number> | null = null;
+function safeAbsSet(): Set<number> {
+  if (cachedSafe) return cachedSafe;
+  const set = new Set<number>();
+  for (let c = 0; c < 4; c++) {
+    set.add(c * 13);
+    set.add((c * 13 + 8) % 52);
+  }
+  cachedSafe = set;
+  return set;
 }
 
 /* ------------------------------------------------------------------ */
