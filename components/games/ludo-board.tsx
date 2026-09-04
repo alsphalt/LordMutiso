@@ -326,6 +326,7 @@ function DiceCube({
   const shadowRef = React.useRef<HTMLDivElement>(null);
   const curRef = React.useRef<[number, number]>([0, 0]);
   const pressRef = React.useRef<{ x: number; y: number } | null>(null);
+  const swipeRef = React.useRef<{ dx: number; dy: number } | null>(null);
   const [pressed, setPressed] = React.useState(false);
   const s = sizePx || 96;
   const h = s / 2;
@@ -422,12 +423,20 @@ function DiceCube({
 
     // ---------- positional physics (px, local to the die area) ----------
     const sc = s / 96;
-    const G = 1600 * sc; // gravity
-    let x = 0; // horizontal throw (bounded by walls below)
+    const G = 1800 * sc; // gravity
+    let x = 0; // starts from the resting position (centre of its area)
     let y = 0; // 0 = resting on the board, negative = up
-    let vy = -(7.5 + Math.random() * 2.4) * s; // lift: throw upward
-    let vx = (0.55 + Math.random() * 0.9) * s * (Math.random() < 0.5 ? 1 : -1); // small forward drift
-    const wall = s * 0.92; // allowed area radius — the die never leaves it
+
+    // Swipe (or tap) sets the throw direction & power.
+    const sw = swipeRef.current;
+    const hasSwipe = sw !== null && (Math.abs(sw.dx) > 6 || Math.abs(sw.dy) > 6);
+    const dirSign = hasSwipe ? Math.sign(sw.dx) || 1 : Math.random() < 0.5 ? 1 : -1;
+    const power = hasSwipe ? Math.min(1.5, 0.45 + Math.abs(sw.dx) / 240) : 0.8 + Math.random() * 0.45;
+    const upBoost = hasSwipe && sw.dy < -28 ? 1.2 : 1;
+    // A realistic toss: apex ~0.3 of the die size, slide of roughly 1 die width.
+    let vy = -(2.5 + Math.random() * 0.8) * s * upBoost; // lift off the board
+    let vx = dirSign * power * s * (0.55 + Math.random() * 0.35); // slide in the swipe direction
+    const wall = s * 0.5; // compact controlled area — bounces back, never leaves
     let bounces = 0;
     let resting = false;
     let raf = 0;
@@ -442,52 +451,63 @@ function DiceCube({
       y += vy * dt;
       x += vx * dt;
 
-      // wall bounce (stay inside the allowed board area)
-      if (x > wall) { x = wall; vx = -vx * 0.5; }
-      else if (x < -wall) { x = -wall; vx = -vx * 0.5; }
+      // wall bounce — the die stays inside its area
+      if (x > wall) { x = wall; vx = -vx * 0.55; }
+      else if (x < -wall) { x = -wall; vx = -vx * 0.55; }
+
       // floor bounce with restitution, then rest
       if (y >= 0) {
         y = 0;
-        if (!resting && bounces < 3 && vy > 120 * sc) {
-          vy = -vy * 0.38;
+        if (!resting && bounces < 3 && vy > 90 * sc) {
+          vy = -vy * 0.42; // small believable bounce
           vx *= 0.72;
           bounces++;
         } else {
           vy = 0;
-          vx = 0;
-          resting = true;
+          if (!resting) {
+            resting = true;
+            vx = 0;
+          }
         }
       } else {
-        vx *= Math.pow(0.55, dt); // air drag on drift
+        vx *= Math.pow(0.5, dt); // air drag on the slide
       }
 
-      // rotation: eased tumble + decaying multi-axis wobble
+      // board friction while sliding on the surface
+      if (y === 0 && !resting) vx *= Math.pow(0.34, dt);
+
+      // gentle roll back to the exact resting spot once the toss is done
+      if (resting && Math.abs(x) > 0.8) {
+        x -= Math.sign(x) * Math.min(Math.abs(x), 340 * sc * dt);
+      }
+
+      // rotation: real 3D tumble (X+Y big turns) + decaying multi-axis wobble (Z too)
       const ta = Math.min(1, (now - tAng0) / angDur);
-      const ease = 1 - Math.pow(1 - ta, 3.2);
-      const wob = Math.sin(ta * Math.PI * 6.8) * Math.max(0, 1 - ta * 1.9) * 18;
+      const ease = 1 - Math.pow(1 - ta, 3.1);
+      const wob = Math.sin(ta * Math.PI * 7.2) * Math.max(0, 1 - ta * 1.9) * 26;
       const rx = rx0 + totalX * ease;
       const ry = ry0 + totalY * ease;
 
       // soft ground shadow reacts to height
       if (sh) {
-        const lift = Math.max(0, Math.min(1, -y / (s * 1.05)));
-        const shScale = 1 - 0.22 * lift;
-        sh.style.opacity = String(0.42 - 0.24 * lift);
+        const lift = Math.max(0, Math.min(1, -y / (s * 0.95)));
+        const shScale = 1 - 0.24 * lift;
+        sh.style.opacity = String(0.45 - 0.26 * lift);
         sh.style.transform = `translate(-50%, 0) translateX(${x.toFixed(1)}px) scale(${shScale.toFixed(3)})`;
       }
 
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) rotateX(${(rx + wob * 0.85).toFixed(2)}deg) rotateY(${(ry - wob * 0.5).toFixed(2)}deg) rotateZ(${(wob * 0.42).toFixed(2)}deg)`;
+      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) rotateX(${(rx + wob * 0.85).toFixed(2)}deg) rotateY(${(ry - wob * 0.5).toFixed(2)}deg) rotateZ(${(wob * 0.45).toFixed(2)}deg)`;
 
-      if (ta < 1 || !resting) {
+      if (ta < 1 || !resting || Math.abs(x) > 0.8) {
         raf = requestAnimationFrame(frame);
       } else {
-        // settle exactly on the server face
+        // settle exactly on the server face, back at the resting position
         const fx = rx0 + totalX;
         const fy = ry0 + totalY;
         curRef.current = [fx, fy];
         el.style.transform = `translate3d(0, 0, 0) rotateX(${fx}deg) rotateY(${fy}deg)`;
         if (sh) {
-          sh.style.opacity = "0.42";
+          sh.style.opacity = "0.45";
           sh.style.transform = "translate(-50%, 0) scale(1)";
         }
       }
@@ -512,8 +532,10 @@ function DiceCube({
     const dx = e.clientX - pressRef.current.x;
     const dy = e.clientY - pressRef.current.y;
     pressRef.current = null;
+    // Remember the gesture so the throw follows its direction & power.
+    swipeRef.current = { dx, dy };
     // A tap OR a swipe (any direction) throws the die.
-    if (Math.hypot(dx, dy) < 96) onRoll();
+    if (Math.hypot(dx, dy) < 120) onRoll();
   };
   const onPointerCancel = () => {
     setPressed(false);
@@ -650,7 +672,7 @@ export function LudoBoard({
   const cellPx = boardW / GRID;
   const tokenPx = cellPx * 0.92;
   const homeTokenPx = cellPx * 0.8;
-  const dieSizePx = Math.min(Math.max(boardW * 0.15, 64), 112);
+  const dieSizePx = Math.min(Math.max(boardW * 0.135, 60), 104);
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
   const legalMoves = React.useMemo(() => {
