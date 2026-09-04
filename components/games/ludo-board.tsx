@@ -7,6 +7,7 @@ import { COLOR_HEX } from "@/lib/games/types";
 import { cn } from "@/lib/utils";
 import { legalLudoMoves, ludoSafeCells, LUDO_FINISH } from "@/lib/games/ludo/engine";
 import type { LudoState } from "@/lib/games/ludo/engine";
+import { sfx, unlockAudio, isSoundMuted, setSoundMuted } from "@/lib/audio/sound";
 
 /* =====================================================================
  * DARKNOTE Ludo board — polished gameplay client.
@@ -756,6 +757,8 @@ export function LudoBoard({
 
   // Dice colour follows the player whose turn it is.
   const turnSeatHex = seatByPn.get(game.currentTurn ?? -1)?.color ?? "#7c5cf6";
+  const [fxWin, setFxWin] = React.useState(false);
+  const [soundOn, setSoundOn] = React.useState(!isSoundMuted());
 
   const homeRelCells = React.useMemo(() => {
     const all: Array<{ pn: number; r: number; c: number; rel: number }> = [];
@@ -845,6 +848,27 @@ export function LudoBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
+  // Unlock audio on the first user gesture (autoplay policies).
+  React.useEffect(() => {
+    const unlock = () => unlockAudio();
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+  }, []);
+
+  // Win fanfare + confetti, fired once when the game finishes.
+  const prevStatusRef = React.useRef(game.status);
+  React.useEffect(() => {
+    const wasOver = prevStatusRef.current === "FINISHED" || prevStatusRef.current === "DRAW";
+    prevStatusRef.current = game.status;
+    if (!wasOver && game.status === "FINISHED") sfx.win();
+    if (game.status === "FINISHED" || game.status === "DRAW") {
+      setFxWin(true);
+      const t = window.setTimeout(() => setFxWin(false), 3800);
+      return () => window.clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.status]);
+
   // When reconnecting or coming back mid-game, show the authoritative die face.
   React.useEffect(() => {
     if (!busyRef.current && die.target === null && die.face === null && state.die != null) {
@@ -891,6 +915,7 @@ export function LudoBoard({
           if (ev.kind === "roll") {
             const dieVal = Number(ev.die ?? 1);
             setDie((d) => ({ face: d.face, spinKey: d.spinKey + 1, target: dieVal }));
+            sfx.roll();
             await sleep(1290); // physics roll duration (1150-1310ms) + settle
             setDie((d) => ({ face: dieVal, spinKey: d.spinKey, target: null }));
             await sleep(90);
@@ -915,14 +940,18 @@ export function LudoBoard({
               const isLast = i === steps.length - 1;
               seal(steps[i]);
               if (isLast) {
+                sfx.land();
+                if (toR >= 56) sfx.finish(); // engine LUDO_FINISH === 56
                 setFx((f) => ({ ...f, [key]: "land" }));
                 window.setTimeout(() => setFx((f) => ({ ...f, [key]: undefined })), 480);
                 await sleep(300);
               } else {
+                sfx.step();
                 await sleep(175);
               }
             }
             // captured tokens fly back to their home socket
+            if (captures.length > 0) sfx.capture();
             for (const c of captures) {
               const vk = `${c.player}:${c.token}`;
               pending.add(vk);
@@ -990,6 +1019,21 @@ export function LudoBoard({
   const tokenEls: ReactNode[] = [];
   const cell = cellPx || 1;
   const visuals = visual;
+  const STACK_OFF: Array<[number, number]> = [
+    [-0.18, -0.14],
+    [0.18, -0.14],
+    [-0.18, 0.14],
+    [0.18, 0.14],
+  ];
+  // Occupancy per exact cell — multiple tokens (e.g. two of your pieces, or
+  // several finished tokens) fan out slightly so every piece stays visible,
+  // selectable and inside its own square area.
+  const cellCount = new Map<string, number>();
+  const cellUsed = new Map<string, number>();
+  for (const p of Object.values(visuals)) {
+    const ck = `${p.r.toFixed(3)},${p.c.toFixed(3)}`;
+    cellCount.set(ck, (cellCount.get(ck) ?? 0) + 1);
+  }
   if (state.tokens) {
     for (const [pnStr, rels] of Object.entries(state.tokens)) {
       const pn = Number(pnStr);
@@ -1001,8 +1045,12 @@ export function LudoBoard({
         if (!pos || !boardW) return;
         const isHome = rel === -1;
         const tpx = isHome ? homeTokenPx : tokenPx;
-        const x = pos.c * cell;
-        const y = pos.r * cell;
+        const ck = `${pos.r.toFixed(3)},${pos.c.toFixed(3)}`;
+        const occ = cellUsed.get(ck) ?? 0;
+        cellUsed.set(ck, occ + 1);
+        const off = (cellCount.get(ck) ?? 1) > 1 ? STACK_OFF[occ % STACK_OFF.length] : [0, 0];
+        const x = pos.c * cell + off[0] * cell;
+        const y = pos.r * cell + off[1] * cell;
         const legal = legalTokens.has(idx) && state.turn === pn && !busyRef.current;
         const effect = fx[key];
         const glide = glideKeysRef.current.has(key);
@@ -1114,6 +1162,21 @@ export function LudoBoard({
 
       {/* status row */}
       <div className="flex items-center justify-center gap-2 px-1">
+        <button
+          type="button"
+          aria-pressed={soundOn}
+          aria-label={soundOn ? "Mute sound" : "Unmute sound"}
+          onClick={() => {
+            const next = !soundOn;
+            setSoundOn(next);
+            setSoundMuted(!next);
+            if (next) sfx.roll();
+          }}
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-bold text-slate-300 transition-colors hover:bg-white/10"
+        >
+          {soundOn ? "🔊" : "🔇"}
+          <span className="hidden sm:inline">{soundOn ? "Sound" : "Muted"}</span>
+        </button>
         <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-xl border border-white/10 bg-white/5 px-3 py-2">
           {[...seatByPn.values()].map((seat) => {
             const turn = activePn === seat.pn;
@@ -1172,7 +1235,39 @@ export function LudoBoard({
           50% { box-shadow: 0 0 0 3px rgba(255,255,255,0.95), 0 0 26px 7px currentColor, 0 3px 6px rgba(0,0,0,0.4); }
         }
         .token-glow { animation: tokenGlowPulse 0.85s ease-in-out infinite; }
+        @keyframes confFall {
+          0% { transform: translateY(-8vh) rotate(0deg); opacity: 1; }
+          90% { opacity: 1; }
+          100% { transform: translateY(106vh) rotate(720deg); opacity: 0.9; }
+        }
+        .confetti-bit {
+          position: absolute;
+          top: -6vh;
+          width: 7px;
+          height: 13px;
+          border-radius: 2px;
+          animation: confFall linear forwards;
+        }
       `}</style>
+      {fxWin && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-[95] overflow-hidden">
+          {Array.from({ length: 72 }).map((_, i) => {
+            const colors = ["#f43f5e", "#facc15", "#22c55e", "#3b82f6", "#8b5cf6", "#f97316", "#22d3ee"];
+            return (
+              <span
+                key={i}
+                className="confetti-bit"
+                style={{
+                  left: `${(i * 1.37 + ((i * 7) % 13)) % 100}%`,
+                  background: colors[i % colors.length],
+                  animationDelay: `${(i % 9) * 0.09}s`,
+                  animationDuration: `${2.3 + (i % 5) * 0.32}s`,
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
