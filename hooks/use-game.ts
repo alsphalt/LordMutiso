@@ -16,6 +16,8 @@ export function useGame(gameId: string) {
   
   const actingRef = useRef(false);
   const lastPollRef = useRef(0);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
 
   const fetchSnapshot = useCallback(async (isInitial = false) => {
     if (isInitial) setLoading(true);
@@ -61,6 +63,44 @@ export function useGame(gameId: string) {
     const interval = setInterval(heartbeat, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  // AI "thinking" delay: whenever it is an AI seat's turn, wait ~3 seconds
+  // before asking the server to execute the AI's move. Watchdog approach so
+  // polling never restarts the countdown, one request per turn, and
+  // reconnect/refresh re-arms it automatically.
+  useEffect(() => {
+    const armedKey = { current: "" };
+    const armedAt = { current: 0 };
+    const firedKey = { current: "" };
+
+    const iv = setInterval(() => {
+      const s = snapshotRef.current;
+      if (!s) return;
+      const seat = s.seats.find((x) => x.playerNumber === s.game.currentTurn);
+      const aiTurn =
+        s.game.gameMode === "AI" && s.game.status === "PLAYING" && !!seat?.isAi;
+      if (!aiTurn) {
+        armedKey.current = "";
+        return;
+      }
+      const key = `${s.game.id}:${s.game.currentTurn}:${s.recentMoves.length}`;
+      if (firedKey.current === key) return;
+      if (armedKey.current !== key) {
+        armedKey.current = key;
+        armedAt.current = Date.now();
+        return;
+      }
+      if (Date.now() - armedAt.current >= 3000) {
+        firedKey.current = key;
+        armedKey.current = "";
+        api(`/api/games/${gameId}/ai-turn`, { method: "POST" }).catch(() => {
+          // polling will re-arm and retry the AI step
+        });
+      }
+    }, 500);
+
+    return () => clearInterval(iv);
+  }, [gameId]);
 
   const act = async (body: any) => {
     setActing(true);

@@ -12,7 +12,6 @@ import { leaveRoom } from "@/lib/server/rooms";
 import { rollLudo, moveLudoToken, resignLudo, createLudoState } from "@/lib/games/ludo/engine";
 import { stepCheckers, resignCheckers, createCheckersState } from "@/lib/games/checkers/engine";
 import { stepChess, resignChess, createChessState, chessTurnSeat } from "@/lib/games/chess/engine";
-import { runAiTurns } from "@/lib/server/ai-run";
 
 export const dynamic = "force-dynamic";
 
@@ -112,9 +111,6 @@ export const POST = handle(async (req, { params }) => {
 
       await recordMove(tx, game.id, mySeat!.id, { kind: "ludo-roll", die, autoPassed });
 
-      // AI reply (e.g. after an auto-passed roll), no-op when it's still the human's turn.
-      if (game.gameMode === "AI") await runAiTurns(tx, game.id);
-
     } else if (input.action === "move") {
       if (game.status !== "PLAYING") throw badRequest("Game not playing");
       if (game.currentTurn !== mySeat?.playerNumber) throw forbidden("Not your turn");
@@ -186,8 +182,7 @@ export const POST = handle(async (req, { params }) => {
           status: result.draw ? "DRAW" : "FINISHED",
         });
       } else if (game.gameMode === "AI") {
-        // let the AI opponent(s) reply immediately
-        await runAiTurns(tx, game.id);
+        // AI replies after a 3s "thinking" delay via POST /api/games/[id]/ai-turn
       }
 
     } else if (input.action === "resign") {
@@ -216,8 +211,7 @@ export const POST = handle(async (req, { params }) => {
           status: result.draw ? "DRAW" : "FINISHED",
         });
       } else if (game.gameMode === "AI") {
-        // bots finish the match after the human resigns
-        await runAiTurns(tx, game.id);
+        // bots finish after the human resigns — via the ai-turn endpoint
       }
     }
 
@@ -280,10 +274,6 @@ async function handleRematch(gameId: string, userId: string) {
         },
       },
     });
-
-    if (oldGame.gameMode === "AI") {
-      await runAiTurns(tx, newGame.id);
-    }
 
     await notifyAll(
       oldGame.players

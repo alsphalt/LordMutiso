@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { badRequest } from "@/lib/api";
 import { ludoSeatAssignment, seatAssignment, ludoColorsFor } from "@/lib/games/types";
 import type { ColorName, GameTypeName } from "@/lib/games/types";
-import { initialEngineState, runAiTurns } from "@/lib/server/ai-run";
+import { initialEngineState } from "@/lib/server/ai-run";
 
 export interface AiCreateInput {
   type: GameTypeName;
@@ -69,14 +69,8 @@ export async function createAiGame(userId: string, input: AiCreateInput): Promis
       });
     }
 
-    // AI opens? play its turn(s) immediately so the human never waits.
-    const firstSeatPns = playerNumbers.slice().sort((a, b) => a - b);
-    const firstSeat = await tx.gamePlayer.findFirst({
-      where: { gameId: game.id, playerNumber: firstSeatPns[0] },
-    });
-    if (firstSeat?.isAi) {
-      await runAiTurns(tx, game.id);
-    }
+    // AI opens? Its turn runs after a 3s "thinking" delay via the
+    // client-triggered /api/games/[id]/ai-turn endpoint (see hooks/use-game.ts).
 
     return game.id;
   });
