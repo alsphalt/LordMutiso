@@ -314,6 +314,7 @@ function DiceCube({
   dim,
   onRoll,
   travelHalf,
+  color,
 }: {
   sizePx: number;
   face: number | null;
@@ -324,6 +325,8 @@ function DiceCube({
   onRoll: () => void;
   /** Max distance the die may travel from the board centre (px). */
   travelHalf?: number;
+  /** Colour of the current player — the die matches whose turn it is. */
+  color?: string;
 }) {
   const cubeRef = React.useRef<HTMLDivElement>(null);
   const shadowRef = React.useRef<HTMLDivElement>(null);
@@ -336,6 +339,12 @@ function DiceCube({
   const [pressed, setPressed] = React.useState(false);
   const s = sizePx || 96;
   const h = s / 2;
+
+  // Isometric tilt — the die reads as a chunky 3D object like the reference.
+  const tilt = "rotateX(-22deg) rotateY(-26deg)";
+  const col = color ?? "#7c5cf6";
+  const faceBg = (c: string) =>
+    `radial-gradient(circle at 30% 22%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.07) 46%), linear-gradient(160deg, ${shade(c, 22)} 0%, ${c} 50%, ${shade(c, -28)} 100%)`;
 
   const faceNodes: ReactNode[] = [];
   const defs: Array<[string, string, number]> = [
@@ -357,10 +366,9 @@ function DiceCube({
           inset: 0,
           transform: `${rot} translateZ(${h}px)`,
           borderRadius: faceRadius,
-          background:
-            "radial-gradient(circle at 30% 24%, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 48%), linear-gradient(160deg,#ffffff 0%,#f8f8fc 50%,#e7e7f0 100%)",
-          border: "1px solid rgba(35,38,58,0.14)",
-          boxShadow: "inset 0 -3px 6px rgba(130,135,160,0.22), inset 0 2px 3px rgba(255,255,255,0.9)",
+          background: faceBg(col),
+          border: "1px solid rgba(0,0,0,0.32)",
+          boxShadow: `inset 0 -5px 9px ${shade(col, -38)}80, inset 0 2px 3px rgba(255,255,255,0.5)`,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -374,8 +382,8 @@ function DiceCube({
                 <span
                   className="block aspect-square w-[86%] rounded-full"
                   style={{
-                    background: "radial-gradient(circle at 38% 32%, #43485a 0%, #1c1f29 62%, #101219 100%)",
-                    boxShadow: "inset 0 1px 1px rgba(255,255,255,0.28), 0 1px 2px rgba(0,0,0,0.35)",
+                    background: "radial-gradient(circle at 36% 30%, #ffffff 0%, #eef1f8 58%, #d4dae8 100%)",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.42), inset 0 -1px 1px rgba(0,0,0,0.14)",
                   }}
                 />
               )}
@@ -534,7 +542,7 @@ function DiceCube({
         sh.style.transform = `translate(-50%, 0) translate(${px.toFixed(1)}px, ${(pu * 0.85).toFixed(1)}px) scale(${shScale.toFixed(3)})`;
       }
 
-      el.style.transform = `translate3d(${px.toFixed(1)}px, ${pu.toFixed(1)}px, ${h.toFixed(1)}px) rotateX(${(rx + wobA).toFixed(2)}deg) rotateY(${(ry + wobB).toFixed(2)}deg) rotateZ(${((Math.sin(t * 6.2) * Math.exp(-(lamX + 1.4) * t) * 6)).toFixed(2)}deg)`;
+      el.style.transform = `translate3d(${px.toFixed(1)}px, ${pu.toFixed(1)}px, ${h.toFixed(1)}px) ${tilt} rotateX(${(rx + wobA).toFixed(2)}deg) rotateY(${(ry + wobB).toFixed(2)}deg) rotateZ(${((Math.sin(t * 6.2) * Math.exp(-(lamX + 1.4) * t) * 6)).toFixed(2)}deg)`;
 
       // Stability check: below thresholds for a CONTINUOUS window -> settled.
       const calm =
@@ -552,7 +560,7 @@ function DiceCube({
       const fx = rx0 + sweepX;
       const fy = ry0 + sweepY;
       curRef.current = [fx, fy];
-      el.style.transform = `rotateX(${fx.toFixed(2)}deg) rotateY(${fy.toFixed(2)}deg)`;
+      el.style.transform = `${tilt} rotateX(${fx.toFixed(2)}deg) rotateY(${fy.toFixed(2)}deg)`;
       if (sh) {
         sh.style.opacity = "0.46";
         sh.style.transform = "translate(-50%, 0) scale(1)";
@@ -563,7 +571,7 @@ function DiceCube({
     return () => {
       cancelAnimationFrame(raf);
       if (!finalized) {
-        el.style.transform = `rotateX(${curRef.current[0].toFixed(2)}deg) rotateY(${curRef.current[1].toFixed(2)}deg)`;
+        el.style.transform = `${tilt} rotateX(${curRef.current[0].toFixed(2)}deg) rotateY(${curRef.current[1].toFixed(2)}deg)`;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -671,7 +679,7 @@ function DiceCube({
             marginLeft: -s / 2,
             marginTop: -s / 2,
             transformStyle: "preserve-3d",
-            transform: `rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`,
+            transform: `${tilt} rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`,
           }}
         >
           {faceNodes}
@@ -682,12 +690,12 @@ function DiceCube({
                 inset: 0,
                 transform: `translateZ(${h}px)`,
                 borderRadius: Math.max(6, Math.round(s * 0.13)),
-                background:
-                  "radial-gradient(circle at 30% 24%, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0) 48%), linear-gradient(160deg,#ffffff 0%,#f8f8fc 50%,#e7e7f0 100%)",
-                border: "1px solid rgba(35,38,58,0.14)",
-                boxShadow: "inset 0 -3px 6px rgba(130,135,160,0.22)",
+                background: faceBg(col),
+                border: "1px solid rgba(0,0,0,0.32)",
+                boxShadow: `inset 0 -5px 9px ${shade(col, -38)}80`,
                 fontSize: s * 0.5,
-                color: "#34384a",
+                color: "rgba(255,255,255,0.94)",
+                textShadow: "0 1px 2px rgba(0,0,0,0.35)",
               }}
             >
               ?
@@ -746,6 +754,9 @@ export function LudoBoard({
     return map;
   }, [seats]);
 
+  // Dice colour follows the player whose turn it is.
+  const turnSeatHex = seatByPn.get(game.currentTurn ?? -1)?.color ?? "#7c5cf6";
+
   const homeRelCells = React.useMemo(() => {
     const all: Array<{ pn: number; r: number; c: number; rel: number }> = [];
     for (const pn of seatByPn.keys()) all.push(...homeColumnCells(pn).map((h) => ({ pn, ...h })));
@@ -755,7 +766,8 @@ export function LudoBoard({
   const cellPx = boardW / GRID;
   const tokenPx = cellPx * 0.86;
   const homeTokenPx = cellPx * 0.74;
-  const dieSizePx = Math.min(Math.max(boardW * 0.135, 60), 104);
+  // Chunky reference-style die (cube of equal height/width/length).
+  const dieSizePx = Math.min(Math.max(boardW * 0.155, 64), 118);
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
   const legalMoves = React.useMemo(() => {
@@ -1088,6 +1100,7 @@ export function LudoBoard({
             <DiceCube
               sizePx={dieSizePx}
               travelHalf={boardW / 2 - dieSizePx * 1.15}
+              color={turnSeatHex}
               face={die.face}
               spinKey={die.spinKey}
               target={die.target}
