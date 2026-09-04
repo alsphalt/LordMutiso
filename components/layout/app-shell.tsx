@@ -7,6 +7,8 @@ import {
   Home, 
   Gamepad2, 
   MessageSquare, 
+  MessagesSquare, 
+  Sparkles, 
   Trophy, 
   History, 
   Settings, 
@@ -68,7 +70,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { label: "Lobby", href: "/lobby", icon: Gamepad2 },
-    { label: "Chat", href: "/chat", icon: MessageSquare },
+    { label: "Chats", href: "/chats", icon: MessagesSquare },
+    { label: "Updates", href: "/updates", icon: Sparkles },
+    { label: "Arena Chat", href: "/chat", icon: MessageSquare },
     { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
     { label: "History", href: "/history", icon: History },
   ];
@@ -203,13 +207,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Home size={20} />
           <span className="text-[10px] font-bold uppercase">Home</span>
         </Link>
-        <Link href="/lobby" className={cn("flex flex-col items-center gap-1", pathname === "/lobby" ? "text-arena-blue" : "text-slate-500")}>
-          <Gamepad2 size={20} />
-          <span className="text-[10px] font-bold uppercase">Lobby</span>
+        <Link href="/chats" className={cn("flex flex-col items-center gap-1", pathname.startsWith("/chats") ? "text-arena-blue" : "text-slate-500")}>
+          <MessagesSquare size={20} />
+          <span className="text-[10px] font-bold uppercase">Chats</span>
+        </Link>
+        <Link href="/updates" className={cn("flex flex-col items-center gap-1", pathname === "/updates" ? "text-arena-blue" : "text-slate-500")}>
+          <Sparkles size={20} />
+          <span className="text-[10px] font-bold uppercase">Updates</span>
         </Link>
         <Link href="/chat" className={cn("flex flex-col items-center gap-1", pathname === "/chat" ? "text-arena-blue" : "text-slate-500")}>
           <MessageSquare size={20} />
-          <span className="text-[10px] font-bold uppercase">Chat</span>
+          <span className="text-[10px] font-bold uppercase">Arena</span>
         </Link>
         <Link href={`/u/${user?.username}`} className={cn("flex flex-col items-center gap-1", pathname.startsWith("/u/") ? "text-arena-blue" : "text-slate-500")}>
           <UserIcon size={20} />

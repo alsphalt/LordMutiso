@@ -91,6 +91,23 @@ model User {
   notifications Notification[]
   // Games this user is currently in (derived via GamePlayer for UI)
 
+  // ---------- Social (DMs, updates, privacy) ----------
+  displayName    String?
+  bio            String?
+  phone          String?              @unique
+  onboardingDone Boolean              @default(false)
+  privacy        PrivacySettings?
+  convMembers    ConversationMember[]
+  sentMessages   Message[]            @relation("MessageSender")
+  contactsOwned  ContactEdge[]        @relation("ContactOwner")
+  contactsOf     ContactEdge[]        @relation("ContactTarget")
+  blocked        Block[]              @relation("BlockOwner")
+  blockedBy      Block[]              @relation("BlockTarget")
+  stories        Story[]
+  storyViews     StoryView[]
+  storyAudience  StoryRecipient[]
+  Report         Report[]
+
   @@index([lastSeen])
   @@index([createdAt])
 }
@@ -233,4 +250,161 @@ model Notification {
   createdAt DateTime         @default(now())
 
   @@index([userId, read, createdAt])
+}
+
+// ---------- Social: DMs, privacy, contacts, updates ----------
+
+enum ConversationKind {
+  DM
+  GROUP
+}
+
+enum MessageKind {
+  TEXT
+  IMAGE
+}
+
+enum VisibilityLevel {
+  EVERYONE
+  CONTACTS
+  NOBODY
+}
+
+enum UpdateVisibility {
+  CONTACTS
+  SELECTED
+  ONLY_ME
+}
+
+model Conversation {
+  id        String           @id @default(cuid())
+  kind      ConversationKind @default(DM)
+  dmKey     String?          @unique // `${minId}:${maxId}` for DM — prevents duplicates
+  lastAt    DateTime         @default(now())
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  members  ConversationMember[]
+  messages Message[]
+}
+
+model ConversationMember {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt     DateTime?
+  archivedAt     DateTime? // user hides the conversation locally
+  createdAt      DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([userId, archivedAt])
+  @@index([conversationId, lastReadAt])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  kind           MessageKind  @default(TEXT)
+  content        String       @default("")
+  mediaUrl       String?
+  deliveredAt    DateTime? // set once the recipient has fetched it
+  deletedAt      DateTime? // soft delete (own messages)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, id])
+  @@index([senderId])
+}
+
+model ContactEdge {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   User     @relation("ContactTarget", fields: [contactId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([ownerId, contactId])
+  @@index([contactId])
+}
+
+model Block {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("BlockOwner", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("BlockTarget", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
+}
+
+model Report {
+  id             String   @id @default(cuid())
+  reporterId     String
+  reporter       User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  targetId       String
+  conversationId String?
+  reason         String   @default("")
+  createdAt      DateTime @default(now())
+
+  @@index([reporterId])
+  @@index([targetId])
+}
+
+model PrivacySettings {
+  userId         String           @id
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  findability    VisibilityLevel  @default(EVERYONE)
+  messaging      VisibilityLevel  @default(EVERYONE)
+  online         VisibilityLevel  @default(EVERYONE)
+  profilePhoto   VisibilityLevel  @default(EVERYONE)
+  lastSeen       VisibilityLevel  @default(EVERYONE)
+  updates        UpdateVisibility @default(CONTACTS)
+  allowDiscovery Boolean          @default(false)
+  updatedAt      DateTime         @updatedAt
+}
+
+model Story {
+  id         String           @id @default(cuid())
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind       MessageKind      @default(TEXT)
+  text       String?
+  mediaUrl   String?
+  visibility UpdateVisibility @default(CONTACTS)
+  createdAt  DateTime         @default(now())
+  expiresAt  DateTime?
+  deletedAt  DateTime?
+  viewers    StoryView[]
+  audience   StoryRecipient[]
+
+  @@index([userId, createdAt])
+}
+
+model StoryView {
+  id        String   @id @default(cuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  viewerId  String
+  viewer    User     @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([storyId, viewerId])
+}
+
+model StoryRecipient {
+  id        String   @id @default(cuid())
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([storyId, userId])
 }
