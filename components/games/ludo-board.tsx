@@ -644,6 +644,7 @@ export function LudoBoard({
 
   const queueRef = React.useRef<Array<Record<string, unknown>>>([]);
   const lastAppliedRef = React.useRef(0);
+  const enqueuedRef = React.useRef(0);
   const initedRef = React.useRef(false);
   const busyRef = React.useRef(false);
   const pumpBusyRef = React.useRef(false);
@@ -762,7 +763,12 @@ export function LudoBoard({
   // ---------- consume server-confirmed moves into the animation queue ----------
   const enqueueNewMoves = React.useCallback(() => {
     for (const m of snapshot.recentMoves) {
+      // Skip anything already played OR already queued. Without the queued
+      // watermark a poll arriving mid-animation could enqueue the same move
+      // twice (double dice spin / double piece move = another "replay").
       if (m.moveNumber <= lastAppliedRef.current) continue;
+      if (m.moveNumber <= enqueuedRef.current) continue;
+      enqueuedRef.current = Math.max(enqueuedRef.current, m.moveNumber);
       const md = (m.moveData ?? {}) as Record<string, unknown>;
       if (md.kind === "ludo-roll") {
         queueRef.current.push({ kind: "roll", die: md.die, moveNumber: m.moveNumber });
@@ -855,10 +861,9 @@ export function LudoBoard({
     // refresh or reconnect). Only NEW confirmed moves are animated.
     if (!initedRef.current) {
       initedRef.current = true;
-      lastAppliedRef.current = snapshot.recentMoves.reduce(
-        (m, x) => Math.max(m, x.moveNumber),
-        0
-      );
+      const maxSeen = snapshot.recentMoves.reduce((m, x) => Math.max(m, x.moveNumber), 0);
+      lastAppliedRef.current = maxSeen;
+      enqueuedRef.current = maxSeen;
       queueRef.current = [];
       return;
     }
