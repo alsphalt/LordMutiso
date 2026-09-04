@@ -341,8 +341,10 @@ function DiceCube({
   const s = sizePx || 96;
   const h = s / 2;
 
-  // Isometric tilt — the die reads as a chunky 3D object like the reference.
-  const tilt = "rotateX(-22deg) rotateY(-26deg)";
+  // Flight tilt — used ONLY while tumbling. As the die settles, the tilt is
+  // eased out so it stops perfectly flat on ONE face looking at the player.
+  const TILT_X = -22;
+  const TILT_Y = -26;
   const col = color ?? "#7c5cf6";
   const faceBg = (c: string) =>
     `radial-gradient(circle at 30% 22%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.07) 46%), linear-gradient(160deg, ${shade(c, 22)} 0%, ${c} 50%, ${shade(c, -28)} 100%)`;
@@ -543,7 +545,9 @@ function DiceCube({
         sh.style.transform = `translate(-50%, 0) translate(${px.toFixed(1)}px, ${(pu * 0.85).toFixed(1)}px) scale(${shScale.toFixed(3)})`;
       }
 
-      el.style.transform = `translate3d(${px.toFixed(1)}px, ${pu.toFixed(1)}px, ${h.toFixed(1)}px) ${tilt} rotateX(${(rx + wobA).toFixed(2)}deg) rotateY(${(ry + wobB).toFixed(2)}deg) rotateZ(${((Math.sin(t * 6.2) * Math.exp(-(lamX + 1.4) * t) * 6)).toFixed(2)}deg)`;
+      // Ease the tilt out over the last ~30% so it stops face-on (one face).
+      const tiltA = t < 0.68 ? 1 : Math.max(0, 1 - (t - 0.68) / 0.32);
+      el.style.transform = `translate3d(${px.toFixed(1)}px, ${pu.toFixed(1)}px, ${h.toFixed(1)}px) rotateX(${(TILT_X * tiltA).toFixed(2)}deg) rotateY(${(TILT_Y * tiltA).toFixed(2)}deg) rotateX(${(rx + wobA).toFixed(2)}deg) rotateY(${(ry + wobB).toFixed(2)}deg) rotateZ(${((Math.sin(t * 6.2) * Math.exp(-(lamX + 1.4) * t) * 6)).toFixed(2)}deg)`;
 
       // Stability check: below thresholds for a CONTINUOUS window -> settled.
       const calm =
@@ -561,7 +565,8 @@ function DiceCube({
       const fx = rx0 + sweepX;
       const fy = ry0 + sweepY;
       curRef.current = [fx, fy];
-      el.style.transform = `${tilt} rotateX(${fx.toFixed(2)}deg) rotateY(${fy.toFixed(2)}deg)`;
+      // Fully settled: zero tilt — exactly one face toward the player.
+      el.style.transform = `rotateX(${fx.toFixed(2)}deg) rotateY(${fy.toFixed(2)}deg)`;
       if (sh) {
         sh.style.opacity = "0.46";
         sh.style.transform = "translate(-50%, 0) scale(1)";
@@ -572,7 +577,7 @@ function DiceCube({
     return () => {
       cancelAnimationFrame(raf);
       if (!finalized) {
-        el.style.transform = `${tilt} rotateX(${curRef.current[0].toFixed(2)}deg) rotateY(${curRef.current[1].toFixed(2)}deg)`;
+        el.style.transform = `rotateX(${curRef.current[0].toFixed(2)}deg) rotateY(${curRef.current[1].toFixed(2)}deg)`;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -680,7 +685,7 @@ function DiceCube({
             marginLeft: -s / 2,
             marginTop: -s / 2,
             transformStyle: "preserve-3d",
-            transform: `${tilt} rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`,
+            transform: `rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`,
           }}
         >
           {faceNodes}
@@ -769,8 +774,8 @@ export function LudoBoard({
   const cellPx = boardW / GRID;
   const tokenPx = cellPx * 0.86;
   const homeTokenPx = cellPx * 0.74;
-  // Chunky reference-style die (cube of equal height/width/length).
-  const dieSizePx = Math.min(Math.max(boardW * 0.155, 64), 118);
+  // Compact die (cube of equal height/width/length) — stays clear of cells.
+  const dieSizePx = Math.min(Math.max(boardW * 0.125, 54), 96);
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
   const legalMoves = React.useMemo(() => {
