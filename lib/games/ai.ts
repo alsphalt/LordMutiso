@@ -83,7 +83,7 @@ export function chooseLudoMove(state: LudoState, player: number, legal: LudoMove
     // Almost always the best; when several moves are near-equal, pick
     // randomly so the bot isn't predictable.
     if (rand() < 0.9 && nearBest.length > 0) return nearBest[Math.floor(rand() * nearBest.length)].token;
-    return best === scores[0].score ? scores[0].token : scores[1].token;
+    return scores[0].token;
   }
   if (difficulty === "MEDIUM") {
     const pool = scores.slice(0, Math.min(3, scores.length));

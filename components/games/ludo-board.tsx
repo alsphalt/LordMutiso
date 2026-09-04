@@ -325,8 +325,11 @@ function DiceCube({
   const cubeRef = React.useRef<HTMLDivElement>(null);
   const shadowRef = React.useRef<HTMLDivElement>(null);
   const curRef = React.useRef<[number, number]>([0, 0]);
-  const pressRef = React.useRef<{ x: number; y: number } | null>(null);
-  const swipeRef = React.useRef<{ dx: number; dy: number } | null>(null);
+  const gestureRef = React.useRef<{
+    sx: number; sy: number; cx: number; cy: number; t0: number;
+    px: number; py: number; pt: number; vx: number; vy: number;
+  } | null>(null);
+  const swipeRef = React.useRef<{ dx: number; dy: number; vx: number; vy: number } | null>(null);
   const [pressed, setPressed] = React.useState(false);
   const s = sizePx || 96;
   const h = s / 2;
@@ -392,154 +395,220 @@ function DiceCube({
   /**
    * Thrown-dice physics roll — lightweight rAF simulation, GPU-only transforms.
    *
-   * The die LIFTS, is THROWN slightly forward/up, TUMBLES fast on X/Y/Z,
-   * BOUNCES on the floor and against the bounds of its small allowed area,
-   * then decelerates and settles EXACTLY on the server-confirmed face.
-   * No WebGL / physics libraries: two DOM elements (cube + ground shadow),
-   * ideal for low-end phones.
+   * Motion model (no snapping, no sudden freeze):
+   *  - ROTATION decays exponentially per axis: sweep·(1 − e^(−λt)). The die
+   *    spins hard, slows, keeps making tiny decaying movements, and converges
+   *    smoothly & exactly on the server-confirmed face (limit of the curve).
+   *  - POSITION is integrated with delta time in the board plane (x + up-board
+   *    depth) with normal-based wall reflections, floor bounces, and
+   *    frame-rate independent friction.
+   *  - SETTLE requires linear & angular speeds to stay below thresholds for a
+   *    continuous stability window — never a velocity < ε → freeze.
    */
   React.useEffect(() => {
     const el = cubeRef.current;
     const sh = shadowRef.current;
     if (!el || spinKey === 0) return;
-    const [ax, ay] = FACE_ORIENT[target ?? 1] ?? [0, 0];
+    const targetFace = target ?? 1;
+    const [ax, ay] = FACE_ORIENT[targetFace] ?? [0, 0];
     const [rx0, ry0] = curRef.current;
 
-    const norm = (v: number) => ((v % 360) + 360) % 360;
-    const dir = (delta: number, dirSign: number) =>
-      dirSign > 0 ? (delta >= 0 ? delta : delta + 360) : delta <= 0 ? delta : delta - 360;
-    const dx = norm(ax) - norm(rx0);
-    const dy = norm(ay) - norm(ry0);
-    const dxS = ((dx + 540) % 360) - 180; // shortest signed delta to the target face
-    const dyS = ((dy + 540) % 360) - 180;
-    const dirX = dxS >= 0 ? 1 : -1;
-    const dirY = dyS >= 0 ? 1 : -1;
-    const totalX = dir(dxS, dirX) + 360 * (2 + Math.floor(Math.random() * 3)); // 2-4 full tumbles
-    const totalY = dir(dyS, dirY) + 360 * (1 + Math.floor(Math.random() * 2));
+    const norm360 = (v: number) => ((v % 360) + 360) % 360;
+    const shortest = (a: number, b: number) => ((norm360(a) - norm360(b) + 540) % 360) - 180;
 
-    // Rotation curve (fast start, natural deceleration) then hold the exact face.
-    const angDur = 760 + Math.random() * 150;
-    const tAng0 = performance.now();
+    const sx = shortest(ax, rx0);
+    const sy = shortest(ay, ry0);
+    const fullX = 360 * (2 + Math.floor(Math.random() * 2)); // 2–3 full tumbles
+    const fullY = 360 * (1 + Math.floor(Math.random() * 2)); // 1–2
+    const sweepX = sx >= 0 ? sx + fullX : sx - fullX;
+    const sweepY = sy >= 0 ? sy + fullY : sy - fullY;
+    const lamX = 4.3 + Math.random() * 0.9; // decay (1/s) — settle ~1s
+    const lamY = 3.6 + Math.random() * 0.8;
 
-    // ---------- positional physics (px, local to the die area) ----------
+    // ---------- linear physics (delta time; units scale with die size only) ----------
     const sc = s / 96;
-    const G = 1800 * sc; // gravity
-    let x = 0; // starts from the resting position (centre of its area)
-    let y = 0; // 0 = resting on the board, negative = up
+    const G = 2100 * sc; // gravity (px/s²)
+    const half = s * 0.5; // allowed area half-extent — the die never leaves it
+    let px = 0; // horizontal position (screen x)
+    let pu = 0; // up-board position (screen -y / board depth)
+    let h = 0; // height above the board (screen +z toward viewer)
+    let vx = 0;
+    let vu = 0;
+    let vz = 0;
 
-    // Swipe (or tap) sets the throw direction & power.
+    // Swipe -> throw vector. Direction from the whole gesture (normalised, so
+    // diagonal swipes work), power from distance AND velocity; capped.
     const sw = swipeRef.current;
-    const hasSwipe = sw !== null && (Math.abs(sw.dx) > 6 || Math.abs(sw.dy) > 6);
-    const dirSign = hasSwipe ? Math.sign(sw.dx) || 1 : Math.random() < 0.5 ? 1 : -1;
-    const power = hasSwipe ? Math.min(1.5, 0.45 + Math.abs(sw.dx) / 240) : 0.8 + Math.random() * 0.45;
-    const upBoost = hasSwipe && sw.dy < -28 ? 1.2 : 1;
-    // A realistic toss: apex ~0.3 of the die size, slide of roughly 1 die width.
-    let vy = -(2.5 + Math.random() * 0.8) * s * upBoost; // lift off the board
-    let vx = dirSign * power * s * (0.55 + Math.random() * 0.35); // slide in the swipe direction
-    const wall = s * 0.5; // compact controlled area — bounces back, never leaves
-    let bounces = 0;
-    let resting = false;
+    const gdx = sw?.dx ?? 0;
+    const gdy = sw?.dy ?? 0;
+    const glen = Math.hypot(gdx, gdy);
+    const gspd = Math.hypot(sw?.vx ?? 0, sw?.vy ?? 0);
+    const isSwipe = glen >= 8; // taps stay taps (dead-zone for accidental drags)
+    const rnd = Math.random;
+    const dxU = isSwipe ? gdx / (glen || 1) : rnd() * 2 - 1;
+    const dyU = isSwipe ? gdy / (glen || 1) : 0.6 + rnd() * 0.3; // taps toss gently up-board
+    const distFrac = glen / s; // measured in die-sizes -> screen-size independent
+    const velFrac = gspd / (s * 12);
+    const power = Math.min(1.55, 0.5 + distFrac * 0.42 + velFrac * 0.5);
+    const throwV = s * (0.55 + 0.8 * power);
+    vx = dxU * throwV;
+    vu = dyU * throwV * 0.85;
+    vz = (1.6 + 0.9 * power) * s * (dyU < 0 ? 1.15 : 1); // upward toss
+    const wallRest = 0.62; // wall/edge energy retained (normal reflection)
+    const floorRest = 0.44; // vertical restitution
+    const maxT = 1.9; // hard safety cap
+
+    const startAt = performance.now();
     let raf = 0;
+    let stableMs = 0;
+    let finalized = false;
     let prev = performance.now();
 
     const frame = (now: number) => {
-      const dt = Math.min(0.033, (now - prev) / 1000);
+      if (finalized) return;
+      const dt = Math.min(0.033, Math.max(0.0005, (now - prev) / 1000));
       prev = now;
+      const t = (now - startAt) / 1000;
 
-      // integrate position
-      vy += G * dt;
-      y += vy * dt;
-      x += vx * dt;
+      // --- linear integration ---
+      vz -= G * dt;
+      h += vz * dt;
+      px += vx * dt;
+      pu += vu * dt;
 
-      // wall bounce — the die stays inside its area
-      if (x > wall) { x = wall; vx = -vx * 0.55; }
-      else if (x < -wall) { x = -wall; vx = -vx * 0.55; }
+      // Wall collisions: reflect along the collision normal, lose energy.
+      if (px > half) { px = half; vx = -vx * wallRest; }
+      else if (px < -half) { px = -half; vx = -vx * wallRest; }
+      if (pu > half * 0.9) { pu = half * 0.9; vu = -vu * wallRest; }
+      else if (pu < -half * 0.9) { pu = -half * 0.9; vu = -vu * wallRest; }
 
-      // floor bounce with restitution, then rest
-      if (y >= 0) {
-        y = 0;
-        if (!resting && bounces < 3 && vy > 90 * sc) {
-          vy = -vy * 0.42; // small believable bounce
-          vx *= 0.72;
-          bounces++;
+      // Floor (board surface): bounce while energetic, then keep sliding.
+      if (h <= 0) {
+        h = 0;
+        if (vz < -90 * sc) {
+          vz = -vz * floorRest; // small believable bounce
+          vx *= 0.8;
+          vu *= 0.8;
         } else {
-          vy = 0;
-          if (!resting) {
-            resting = true;
+          vz = 0;
+          if (Math.abs(vx) < s * 0.4 && Math.abs(vu) < s * 0.4) {
             vx = 0;
+            vu = 0;
           }
         }
-      } else {
-        vx *= Math.pow(0.5, dt); // air drag on the slide
       }
 
-      // board friction while sliding on the surface
-      if (y === 0 && !resting) vx *= Math.pow(0.34, dt);
+      // Frame-rate independent friction (stronger when rolling on the board).
+      const groundFric = h === 0 ? Math.pow(0.12, dt) : Math.pow(0.45, dt);
+      vx *= groundFric;
+      vu *= groundFric;
 
-      // gentle roll back to the exact resting spot once the toss is done
-      if (resting && Math.abs(x) > 0.8) {
-        x -= Math.sign(x) * Math.min(Math.abs(x), 340 * sc * dt);
-      }
+      // --- rotation: exponential decay (natural slow-down + micro-roll) ---
+      const kX = 1 - Math.exp(-lamX * t);
+      const kY = 1 - Math.exp(-lamY * t);
+      // Tiny decaying multi-axis wobble for the final "micro-roll".
+      const wobA = Math.sin(t * 8.6) * Math.exp(-(lamX + 2.2) * t) * 9;
+      const wobB = Math.sin(t * 7.4 + 1.9) * Math.exp(-(lamY + 2.6) * t) * 8;
+      const rx = rx0 + sweepX * kX;
+      const ry = ry0 + sweepY * kY;
+      const angVX = Math.abs(sweepX) * lamX * Math.exp(-lamX * t);
+      const angVY = Math.abs(sweepY) * lamY * Math.exp(-lamY * t);
+      const linSpd = Math.hypot(vx, vu);
 
-      // rotation: real 3D tumble (X+Y big turns) + decaying multi-axis wobble (Z too)
-      const ta = Math.min(1, (now - tAng0) / angDur);
-      const ease = 1 - Math.pow(1 - ta, 3.1);
-      const wob = Math.sin(ta * Math.PI * 7.2) * Math.max(0, 1 - ta * 1.9) * 26;
-      const rx = rx0 + totalX * ease;
-      const ry = ry0 + totalY * ease;
-
-      // soft ground shadow reacts to height
+      // Ground shadow tracks height & position.
       if (sh) {
-        const lift = Math.max(0, Math.min(1, -y / (s * 0.95)));
-        const shScale = 1 - 0.24 * lift;
-        sh.style.opacity = String(0.45 - 0.26 * lift);
-        sh.style.transform = `translate(-50%, 0) translateX(${x.toFixed(1)}px) scale(${shScale.toFixed(3)})`;
+        const liftF = Math.max(0, Math.min(1, h / (s * 1.1)));
+        const shScale = 1 - 0.3 * liftF;
+        sh.style.opacity = String(0.46 - 0.28 * liftF);
+        sh.style.transform = `translate(-50%, 0) translate(${px.toFixed(1)}px, ${(pu * 0.85).toFixed(1)}px) scale(${shScale.toFixed(3)})`;
       }
 
-      el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) rotateX(${(rx + wob * 0.85).toFixed(2)}deg) rotateY(${(ry - wob * 0.5).toFixed(2)}deg) rotateZ(${(wob * 0.45).toFixed(2)}deg)`;
+      el.style.transform = `translate3d(${px.toFixed(1)}px, ${pu.toFixed(1)}px, ${h.toFixed(1)}px) rotateX(${(rx + wobA).toFixed(2)}deg) rotateY(${(ry + wobB).toFixed(2)}deg) rotateZ(${((Math.sin(t * 6.2) * Math.exp(-(lamX + 1.4) * t) * 6)).toFixed(2)}deg)`;
 
-      if (ta < 1 || !resting || Math.abs(x) > 0.8) {
+      // Stability check: below thresholds for a CONTINUOUS window -> settled.
+      const calm =
+        h === 0 && linSpd < s * 0.18 && angVX < 55 && angVY < 55 && t > 0.45;
+      stableMs = calm ? stableMs + dt * 1000 : 0;
+      const settled = stableMs >= 130;
+
+      if (!settled && t < maxT) {
         raf = requestAnimationFrame(frame);
-      } else {
-        // settle exactly on the server face, back at the resting position
-        const fx = rx0 + totalX;
-        const fy = ry0 + totalY;
-        curRef.current = [fx, fy];
-        el.style.transform = `translate3d(0, 0, 0) rotateX(${fx}deg) rotateY(${fy}deg)`;
-        if (sh) {
-          sh.style.opacity = "0.45";
-          sh.style.transform = "translate(-50%, 0) scale(1)";
-        }
+        return;
+      }
+
+      // Fully settled: exact face (analytic limit), no snap beyond <1° imperceptible.
+      finalized = true;
+      const fx = rx0 + sweepX;
+      const fy = ry0 + sweepY;
+      curRef.current = [fx, fy];
+      el.style.transform = `rotateX(${fx.toFixed(2)}deg) rotateY(${fy.toFixed(2)}deg)`;
+      if (sh) {
+        sh.style.opacity = "0.46";
+        sh.style.transform = "translate(-50%, 0) scale(1)";
       }
     };
     raf = requestAnimationFrame(frame);
 
     return () => {
       cancelAnimationFrame(raf);
-      el.style.transform = `translate3d(0,0,0) rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`;
+      if (!finalized) {
+        el.style.transform = `rotateX(${curRef.current[0].toFixed(2)}deg) rotateY(${curRef.current[1].toFixed(2)}deg)`;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spinKey]);
 
-  const onPointerDown = (e: React.PointerEvent) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!interactive) return;
-    pressRef.current = { x: e.clientX, y: e.clientY };
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* not critical */
+    }
+    const t = performance.now();
+    gestureRef.current = {
+      sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, t0: t,
+      px: e.clientX, py: e.clientY, pt: t, vx: 0, vy: 0,
+    };
     setPressed(true);
   };
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const g = gestureRef.current;
+    if (!g) return;
+    g.cx = e.clientX;
+    g.cy = e.clientY;
+    const t = performance.now();
+    // Re-sample at ~40Hz so velocity reflects the real gesture speed.
+    if (t - g.pt >= 24) {
+      const dt = (t - g.pt) / 1000;
+      if (dt > 0.001) {
+        const vx = (g.cx - g.px) / dt;
+        const vy = (g.cy - g.py) / dt;
+        g.vx = Math.max(-4 * s, Math.min(4 * s, g.vx * 0.5 + vx * 0.5));
+        g.vy = Math.max(-4 * s, Math.min(4 * s, g.vy * 0.5 + vy * 0.5));
+      }
+      g.px = g.cx;
+      g.py = g.cy;
+      g.pt = t;
+    }
+  };
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     setPressed(false);
-    if (!interactive || !pressRef.current) return;
-    const dx = e.clientX - pressRef.current.x;
-    const dy = e.clientY - pressRef.current.y;
-    pressRef.current = null;
-    // Remember the gesture so the throw follows its direction & power.
-    swipeRef.current = { dx, dy };
-    // A tap OR a swipe (any direction) throws the die.
-    if (Math.hypot(dx, dy) < 120) onRoll();
+    const g = gestureRef.current;
+    gestureRef.current = null;
+    if (!interactive || !g) return;
+    const dx = e.clientX - g.sx;
+    const dy = e.clientY - g.sy;
+    const dur = performance.now() - g.t0;
+    // Remember the complete gesture: total direction + tracked velocity.
+    swipeRef.current = { dx, dy, vx: g.vx, vy: g.vy };
+    // Tiny accidental touches / long holds do not throw.
+    if (Math.hypot(dx, dy) < 6 && dur > 700) return;
+    onRoll();
   };
   const onPointerCancel = () => {
     setPressed(false);
-    pressRef.current = null;
+    gestureRef.current = null;
   };
 
   const idle = !dim && spinKey === 0 && face !== null;
@@ -551,8 +620,9 @@ function DiceCube({
         !interactive && "pointer-events-none",
         pressed && interactive && "scale-90"
       )}
-      style={{ width: s, height: s, perspective: s * 2.8 }}
+      style={{ width: s, height: s, perspective: s * 2.8, touchAction: "none" }}
       onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       role={interactive ? "button" : undefined}
