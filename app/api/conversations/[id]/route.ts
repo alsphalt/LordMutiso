@@ -58,7 +58,9 @@ export const GET = handle(async (req, ctx) => {
     data: { deliveredAt: new Date() },
   });
 
-  return ok({ messages: page, hasMore, nextCursor: hasMore ? page[0]?.id ?? null : null });
+  const { convDto } = await import("@/lib/social");
+  const meta = await convDto(id, user.id);
+  return ok({ messages: page, hasMore, nextCursor: hasMore ? page[0]?.id ?? null : null, meta });
 });
 
 export const POST = handle(async (req, ctx) => {
