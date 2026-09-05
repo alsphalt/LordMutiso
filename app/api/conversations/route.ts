@@ -1,20 +1,27 @@
 import { handle, ok, badRequest } from "@/lib/api";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
-import { ensureDm, convDto, canMessage, blockedEither, canFind, publicUserDto } from "@/lib/social";
+import { ensureDm, convDto, canMessage, blockedEither } from "@/lib/social";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/conversations — the viewer's DM list (latest first, unread counts). */
+/**
+ * GET /api/conversations — the viewer's conversations, newest first.
+ * Returns active (incl. unread/groups) and archived separately so the UI can
+ * render All / Unread / Groups / Archived filters without extra requests.
+ */
 export const GET = handle(async () => {
   const user = await requireUser();
   const members = await prisma.conversationMember.findMany({
-    where: { userId: user.id, archivedAt: null },
+    where: { userId: user.id },
     orderBy: { conversation: { lastAt: "desc" } },
-    select: { conversationId: true },
+    select: { conversationId: true, archivedAt: true },
   });
   const rows = await Promise.all(members.map((m) => convDto(m.conversationId, user.id)));
-  return ok({ conversations: rows });
+  return ok({
+    conversations: rows.filter((r) => !r.archived),
+    archived: rows.filter((r) => r.archived),
+  });
 });
 
 /** POST /api/conversations { targetId } — find or create a private 1-to-1 DM. */
@@ -39,3 +46,5 @@ export const POST = handle(async (req) => {
   const conv = await convDto(id, user.id);
   return ok({ conversation: conv });
 });
+
+

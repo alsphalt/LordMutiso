@@ -86,6 +86,43 @@ export const POST = handle(async (req, ctx) => {
     return ok({ ok: true });
   }
 
+  if (action === "unarchive") {
+    await prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId: id, userId: user.id } },
+      data: { archivedAt: null },
+    });
+    return ok({ ok: true });
+  }
+
+  if (action === "mute") {
+    await prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId: id, userId: user.id } },
+      data: { mutedAt: new Date() },
+    });
+    return ok({ ok: true });
+  }
+
+  if (action === "unmute") {
+    await prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId: id, userId: user.id } },
+      data: { mutedAt: null },
+    });
+    return ok({ ok: true });
+  }
+
+  if (action === "markUnread") {
+    await prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId: id, userId: user.id } },
+      data: { lastReadAt: null },
+    });
+    return ok({ ok: true });
+  }
+
+  if (action === "clear") {
+    await prisma.message.deleteMany({ where: { conversationId: id } });
+    return ok({ ok: true });
+  }
+
   if (action === "deleteMessage") {
     const messageId = String(body.messageId ?? "");
     const msg = await prisma.message.findFirst({ where: { id: messageId, conversationId: id } });
@@ -101,11 +138,15 @@ export const POST = handle(async (req, ctx) => {
     if (kind === "TEXT" && raw.length === 0) throw badRequest("Empty message");
     const mediaUrl = validateMediaDataUrl(typeof body.mediaUrl === "string" ? body.mediaUrl : null);
 
-    // Enforce DM rules at send time.
-    const other = await prisma.conversationMember.findFirst({
-      where: { conversationId: id, userId: { not: user.id } },
-      include: { user: { include: { privacy: true } } },
-    });
+    // Enforce DM rules at send time (groups are invitation-based).
+    const convKind = await prisma.conversation.findUnique({ where: { id }, select: { kind: true } });
+    const other =
+      convKind?.kind === "GROUP"
+        ? null
+        : await prisma.conversationMember.findFirst({
+            where: { conversationId: id, userId: { not: user.id } },
+            include: { user: { include: { privacy: true } } },
+          });
     if (other) {
       if (await blockedEither(user.id, other.userId)) throw badRequest("You cannot message this user");
     }

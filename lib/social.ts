@@ -124,13 +124,18 @@ export async function convDto(conversationId: string, viewerId: string) {
     where: { id: conversationId },
     include: {
       members: { include: { user: { include: { privacy: true } } } },
-      messages: { orderBy: { id: "desc" }, take: 1 },
+      messages: {
+        orderBy: { id: "desc" },
+        take: 1,
+        include: { sender: { select: { id: true, username: true } } },
+      },
     },
   });
   if (!conv) throw notFound("Conversation not found");
   const me = conv.members.find((m) => m.userId === viewerId);
   if (!me) throw forbidden("You are not a member of this conversation");
-  const peer = conv.members.find((m) => m.userId !== viewerId)?.user ?? null;
+  const others = conv.members.filter((m) => m.userId !== viewerId);
+  const peer = others[0]?.user ?? null;
   const last = conv.messages[0] ?? null;
   const unread = await prisma.message.count({
     where: {
@@ -140,15 +145,34 @@ export async function convDto(conversationId: string, viewerId: string) {
       ...(me.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
     },
   });
+  const typing = others.some((o) => o.lastTypingAt !== null && Date.now() - o.lastTypingAt.getTime() < 5000);
   return {
     id: conv.id,
     kind: conv.kind,
+    name: conv.name,
+    avatarUrl: conv.avatarUrl,
     peer: peer ? publicUserDto(peer) : null,
-    lastMessage: last && !last.deletedAt
-      ? { id: last.id, kind: last.kind, content: last.content, createdAt: last.createdAt.toISOString(), fromMe: last.senderId === viewerId }
-      : null,
+    lastMessage:
+      last && !last.deletedAt
+        ? {
+            id: last.id,
+            kind: last.kind,
+            content: last.content,
+            createdAt: last.createdAt.toISOString(),
+            fromMe: last.senderId === viewerId,
+            senderName: last.sender.username,
+            delivered: last.deliveredAt !== null,
+            read:
+              last.senderId === viewerId
+                ? others.some((o) => o.lastReadAt !== null && last.createdAt <= o.lastReadAt)
+                : false,
+          }
+        : null,
     unread,
     archived: me.archivedAt !== null,
+    muted: me.mutedAt !== null,
+    typing,
+    lastAt: conv.lastAt.toISOString(),
     createdAt: conv.createdAt.toISOString(),
   };
 }

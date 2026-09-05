@@ -103,6 +103,7 @@ model User {
   contactsOf     ContactEdge[]        @relation("ContactTarget")
   blocked        Block[]              @relation("BlockOwner")
   blockedBy      Block[]              @relation("BlockTarget")
+  createdConversations Conversation[]  @relation("ConversationCreator")
   stories        Story[]
   storyViews     StoryView[]
   storyAudience  StoryRecipient[]
@@ -277,12 +278,16 @@ enum UpdateVisibility {
 }
 
 model Conversation {
-  id        String           @id @default(cuid())
-  kind      ConversationKind @default(DM)
-  dmKey     String?          @unique // `${minId}:${maxId}` for DM — prevents duplicates
-  lastAt    DateTime         @default(now())
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  id          String           @id @default(cuid())
+  kind        ConversationKind @default(DM)
+  dmKey       String?          @unique // `${minId}:${maxId}` for DM — prevents duplicates
+  name        String? // group name
+  avatarUrl   String? // group image
+  createdById String? // group creator
+  creator     User?            @relation("ConversationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  lastAt      DateTime         @default(now())
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   members  ConversationMember[]
   messages Message[]
@@ -296,6 +301,8 @@ model ConversationMember {
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   lastReadAt     DateTime?
   archivedAt     DateTime? // user hides the conversation locally
+  mutedAt        DateTime? // muted notifications
+  lastTypingAt   DateTime? // typing heartbeat for this user in this conversation
   createdAt      DateTime     @default(now())
 
   @@unique([conversationId, userId])
