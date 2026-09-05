@@ -140,9 +140,13 @@ const StaticLayers = React.memo(function StaticLayers({
               top: `${P(r)}%`,
               width: `${P(1)}%`,
               height: `${P(1)}%`,
-              background: isStart ? "linear-gradient(180deg,#fff7e2,#f1e2bd)" : CREAM,
-              border: "1px solid rgba(110,78,40,0.35)",
-              boxShadow: safe ? `inset 0 0 0 2px ${alpha("#a9763c", 0.35)}` : undefined,
+              background: isStart
+                ? `radial-gradient(circle at 32% 20%, rgba(255,255,255,0.95), rgba(255,255,255,0) 52%), linear-gradient(180deg, #fff8e6, #f2e2ba)`
+                : `radial-gradient(circle at 32% 20%, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0) 55%), linear-gradient(180deg, #fffdf0, #f1e4c2)`,
+              border: "1px solid rgba(90,60,25,0.4)",
+              boxShadow: safe
+                ? `inset 0 0 0 1.5px ${alpha("#8a5a28", 0.5)}, inset 0 1px 1px rgba(255,255,255,0.8)`
+                : "inset 0 1px 1px rgba(255,255,255,0.8), 0 1px 1px rgba(0,0,0,0.12)",
             }}
           >
             {safe && (
@@ -186,11 +190,11 @@ const StaticLayers = React.memo(function StaticLayers({
               top: `${P(h.r)}%`,
               width: `${P(1)}%`,
               height: `${P(1)}%`,
-              background: `linear-gradient(145deg, ${hex}F2, ${hex}B8)`,
-              border: "1px solid rgba(70,40,10,0.45)",
-              backgroundImage: `radial-gradient(${alpha(shade(hex, -34), 0.5)} 1px, transparent 1.6px)`,
-              backgroundSize: "7px 7px",
-              boxShadow: "inset 0 1px 2px rgba(255,255,255,0.35)",
+              background: `radial-gradient(${alpha(shade(hex, -38), 0.5)} 1px, transparent 1.7px), radial-gradient(circle at 28% 16%, rgba(255,255,255,0.55), rgba(255,255,255,0) 48%), linear-gradient(160deg, ${hex}F0, ${shade(hex, -24)}B4)`,
+              backgroundSize: "7px 7px, 100% 100%, 100% 100%",
+              backgroundPosition: "0 0, 0 0, 0 0",
+              border: "1px solid rgba(60,30,8,0.5)",
+              boxShadow: "inset 0 1px 2px rgba(255,255,255,0.4), inset 0 -2px 3px rgba(0,0,0,0.18)",
             }}
           />
         );
@@ -1114,11 +1118,13 @@ export function LudoBoard({
               transform: `translate3d(${x - tpx / 2}px, ${y - tpx / 2}px, 0)`,
               transition: glide ? "transform 150ms cubic-bezier(.25,.6,.3,1)" : "none",
               willChange: "transform",
-              background: `radial-gradient(circle at 32% 28%, ${shade(seat.color, 38)} 0%, ${seat.color} 45%, ${shade(seat.color, -26)} 100%)`,
-              border: `2px solid rgba(255,255,255,0.85)`,
+              // Realistic glossy token: specular highlight, body gradient,
+              // rim light + soft contact shadow for believable depth.
+              background: `radial-gradient(circle at 31% 22%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 42%), radial-gradient(circle at 42% 40%, ${shade(seat.color, 34)} 0%, ${seat.color} 46%, ${shade(seat.color, -32)} 100%)`,
+              border: `2px solid rgba(255,255,255,0.92)`,
               boxShadow: legal
-                ? `0 0 0 3px rgba(255,255,255,0.9), 0 0 16px 2px ${seat.color}, 0 3px 6px rgba(0,0,0,0.4)`
-                : `0 0 0 1px ${alpha(shade(seat.color, -40), 0.7)}, 0 3px 5px rgba(0,0,0,0.35)`,
+                ? `0 0 0 2px rgba(255,255,255,0.95), 0 0 13px 1px ${alpha(seat.color, 0.85)}, 0 3px 6px rgba(0,0,0,0.45)`
+                : `0 2px 4px rgba(0,0,0,0.4), 0 7px 12px -5px rgba(0,0,0,0.55)`,
               touchAction: "manipulation",
             }}
           >
@@ -1129,8 +1135,11 @@ export function LudoBoard({
                 effect === "capture" && "fx-capture"
               )}
               style={{
-                background:
-                  effect === "capture" ? "rgba(255,255,255,0.05)" : alpha("#ffffff", 0.16),
+                background: `linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0) 55%)`,
+                boxShadow:
+                  effect === "capture"
+                    ? "none"
+                    : "inset 0 -4px 6px rgba(0,0,0,0.16)",
               }}
             />
           </button>
