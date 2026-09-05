@@ -282,6 +282,28 @@ const StaticLayers = React.memo(function StaticLayers({
           />
         ));
       })}
+
+      {/* ghost bases for free corners — keeps the classic 4-corner board look */}
+      {[1, 2, 3, 4]
+        .filter((pn) => !seats.has(pn))
+        .map((pn) => {
+          const q = QUAD_CENTERS[pn];
+          return (
+            <div
+              key={`g${pn}`}
+              className="pointer-events-none absolute rounded-full"
+              style={{
+                left: `${P(q.c)}%`,
+                top: `${P(q.r)}%`,
+                width: `${P(4.6)}%`,
+                height: `${P(4.6)}%`,
+                transform: "translate(-50%,-50%)",
+                background: "rgba(255,255,255,0.025)",
+                border: "2px dashed rgba(255,255,255,0.10)",
+              }}
+            />
+          );
+        })}
     </>
   );
 });
