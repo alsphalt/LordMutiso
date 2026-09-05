@@ -227,42 +227,52 @@ const StaticLayers = React.memo(function StaticLayers({
         />
       </div>
 
-      {/* corner bases + sockets */}
+      {/* corner bases — large rounded SQUARE home panels (classic Ludo) */}
       {[...seats.values()].map((seat) => {
         const q = QUAD_CENTERS[seat.pn];
         const hex = seat.color;
         const isTurn = activePn === seat.pn;
-        const baseSize = 4.6;
+        const baseSize = 5.0;
+        const radius = "16%";
         return (
           <div
             key={`b${seat.pn}`}
-            className="absolute rounded-full"
+            className="absolute"
             style={{
               left: `${P(q.c)}%`,
               top: `${P(q.r)}%`,
               width: `${P(baseSize)}%`,
               height: `${P(baseSize)}%`,
               transform: "translate(-50%,-50%)",
-              background: `radial-gradient(circle at 32% 28%, ${alpha(shade(hex, 30), 0.95)} 0%, ${alpha(hex, 0.85)} 55%, ${alpha(shade(hex, -30), 0.98)} 100%)`,
-              border: `3px solid ${alpha(shade(hex, -38), 0.9)}`,
+              borderRadius: radius,
+              background: `linear-gradient(150deg, ${alpha(shade(hex, 32), 0.97)} 0%, ${alpha(hex, 0.92)} 46%, ${alpha(shade(hex, -26), 0.99)} 100%)`,
+              border: `3px solid ${alpha(shade(hex, -42), 0.95)}`,
               boxShadow: isTurn
-                ? `0 0 0 3px rgba(255,255,255,0.35), 0 0 26px 4px ${hex}, inset 0 2px 10px rgba(0,0,0,0.3)`
-                : "inset 0 2px 10px rgba(0,0,0,0.3), 0 6px 12px rgba(0,0,0,0.35)",
+                ? `0 0 0 3px rgba(255,255,255,0.4), 0 0 30px 6px ${alpha(hex, 0.95)}, inset 0 -14px 24px rgba(0,0,0,0.35), inset 0 4px 10px rgba(255,255,255,0.22)`
+                : `0 8px 18px rgba(0,0,0,0.45), inset 0 -14px 24px rgba(0,0,0,0.35), inset 0 4px 10px rgba(255,255,255,0.18)`,
             }}
           >
             <div
-              className="pointer-events-none absolute inset-0 rounded-full opacity-60"
+              className="pointer-events-none absolute inset-0"
               style={{
-                backgroundImage: `radial-gradient(${alpha(shade(hex, -45), 0.55)} 1px, transparent 1.6px), radial-gradient(${alpha("#ffffff", 0.35)} 1px, transparent 1.6px)`,
-                backgroundSize: "8px 8px, 10px 10px",
-                backgroundPosition: "0 0, 5px 5px",
+                borderRadius: radius,
+                backgroundImage:
+                  "radial-gradient(ellipse at 24% 16%, rgba(255,255,255,0.5), rgba(255,255,255,0) 48%)",
+              }}
+            />
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                borderRadius: radius,
+                border: "2px solid rgba(255,255,255,0.3)",
+                boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.16)",
               }}
             />
           </div>
         );
       })}
 
-      {/* token sockets inside the bases */}
+      {/* token sockets — recessed circular holders inside each home */}
       {[...seats.values()].map((seat) => {
         const q = QUAD_CENTERS[seat.pn];
         return SOCKET_OFFS.map(([dr, dc], i) => (
@@ -272,12 +282,13 @@ const StaticLayers = React.memo(function StaticLayers({
             style={{
               left: `${P(q.c + dr)}%`,
               top: `${P(q.r + dc)}%`,
-              width: `${P(1.15)}%`,
-              height: `${P(1.15)}%`,
+              width: `${P(1.2)}%`,
+              height: `${P(1.2)}%`,
               transform: "translate(-50%,-50%)",
-              background: "rgba(0,0,0,0.18)",
-              border: `2px solid ${alpha("#ffffff", 0.5)}`,
-              boxShadow: "inset 0 2px 4px rgba(0,0,0,0.35)",
+              background:
+                "radial-gradient(circle at 50% 40%, rgba(0,0,0,0.45), rgba(0,0,0,0.72) 70%)",
+              border: "2px solid rgba(255,255,255,0.42)",
+              boxShadow: "inset 0 3px 7px rgba(0,0,0,0.65), 0 1px 0 rgba(255,255,255,0.4)",
             }}
           />
         ));
@@ -291,13 +302,14 @@ const StaticLayers = React.memo(function StaticLayers({
           return (
             <div
               key={`g${pn}`}
-              className="pointer-events-none absolute rounded-full"
+              className="pointer-events-none absolute"
               style={{
                 left: `${P(q.c)}%`,
                 top: `${P(q.r)}%`,
-                width: `${P(4.6)}%`,
-                height: `${P(4.6)}%`,
+                width: `${P(5.0)}%`,
+                height: `${P(5.0)}%`,
                 transform: "translate(-50%,-50%)",
+                borderRadius: "16%",
                 background: "rgba(255,255,255,0.025)",
                 border: "2px dashed rgba(255,255,255,0.10)",
               }}
@@ -797,7 +809,8 @@ export function LudoBoard({
   const tokenPx = cellPx * 0.86;
   const homeTokenPx = cellPx * 0.74;
   // Compact die (cube of equal height/width/length) — stays clear of cells.
-  const dieSizePx = Math.min(Math.max(boardW * 0.125, 54), 96);
+  // Dice lives in its own dock below the board — larger & touch friendly.
+  const dieSizePx = Math.min(Math.max(boardW * 0.2, 80), 126);
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
   const legalMoves = React.useMemo(() => {
@@ -1151,30 +1164,35 @@ export function LudoBoard({
       >
         <div
           className="absolute inset-0 rounded-2xl"
-          style={{
-            background: WOOD,
-            boxShadow:
-              "inset 0 0 0 4px rgba(60,38,18,0.55), inset 0 0 60px rgba(0,0,0,0.28), 0 18px 40px -12px rgba(0,0,0,0.7)",
-          }}
-        />
+            style={{
+              background: WOOD,
+              boxShadow:
+                "inset 0 0 0 4px rgba(60,38,18,0.55), inset 0 0 60px rgba(0,0,0,0.28), 0 18px 40px -12px rgba(0,0,0,0.7), 0 0 46px 2px rgba(124,58,237,0.55)",
+            }}
+          />
 
         <StaticLayers seats={seatByPn} activePn={activePn} homeRelCells={homeRelCells} />
 
         {tokenEls}
 
-        {/* on-board dice */}
-        {showDie && (
+      </div>
+
+      {/* dice dock — separate interactive dice near the player controls */}
+      {showDie && (
+        <div className="flex justify-center px-1">
           <div
             className={cn(
-              "absolute z-50",
-              !canRoll && "cursor-not-allowed",
+              "relative flex flex-col items-center rounded-2xl border border-white/10 px-5 py-3 backdrop-blur-md",
+              "bg-white/[0.045]",
               canRoll && "die-pulse"
             )}
-            style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
+            style={{
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 26px -12px rgba(0,0,0,0.7)",
+            }}
           >
             <DiceCube
               sizePx={dieSizePx}
-              travelHalf={boardW / 2 - dieSizePx * 1.15}
+              travelHalf={dieSizePx * 0.9}
               color={turnSeatHex}
               face={die.face}
               spinKey={die.spinKey}
@@ -1183,9 +1201,12 @@ export function LudoBoard({
               dim={!canRoll && die.target === null}
               onRoll={() => void doRoll()}
             />
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.24em] text-slate-500">
+              {die.target !== null ? "Rolling…" : canRoll ? "Tap or swipe to roll" : "Waiting"}
+            </p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* status row */}
       <div className="flex items-center justify-center gap-2 px-1">
