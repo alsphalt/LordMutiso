@@ -25,6 +25,12 @@ const PIECES: Record<string, string> = {
   bP: "♟", bR: "♜", bN: "♞", bB: "♝", bQ: "♛", bK: "♚",
 };
 
+/* Subtle marble textures (kept low-contrast so pieces stay readable). */
+const SQ_LIGHT =
+  "radial-gradient(62% 62% at 30% 18%, rgba(255,255,255,0.5), rgba(255,255,255,0) 72%), radial-gradient(50% 55% at 74% 86%, rgba(146,92,38,0.10), rgba(146,92,38,0) 72%), linear-gradient(135deg, #f2dfba 0%, #ecd0a3 45%, #dfbd8e 100%)";
+const SQ_DARK =
+  "radial-gradient(60% 70% at 26% 15%, rgba(255,228,182,0.17), rgba(255,228,182,0) 72%), radial-gradient(50% 60% at 78% 88%, rgba(118,58,138,0.10), rgba(118,58,138,0) 74%), linear-gradient(135deg, #9f7751 0%, #8a5f3d 45%, #6c4830 100%)";
+
 /**
  * Inline SVG silhouette geometry for each piece type (viewBox 0 0 45 45).
  * Shapes have no fill so they inherit the fill set on the wrapping <g>.
@@ -178,6 +184,17 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
   const isOver = ["FINISHED", "DRAW"].includes(game.status);
   const inCheck = chess.inCheck();
 
+  // Last played chess move (for soft square highlights): cyan when the AI
+  // played it, purple when a human did. Presentation-only.
+  const lastMove = useMemo(() => {
+    const mv = snapshot.recentMoves[snapshot.recentMoves.length - 1];
+    if (!mv) return null;
+    const d = mv.moveData as any;
+    if (!d || d.kind !== "chess-move" || typeof d.from !== "number" || typeof d.to !== "number") return null;
+    const seat = seats.find((s) => s.playerNumber === mv.playerNumber);
+    return { from: d.from, to: d.to, isAi: !!seat?.isAi };
+  }, [snapshot.recentMoves, seats]);
+
   return (
     <div className="w-full h-full flex flex-col gap-4">
       <div className="relative w-full aspect-square shrink-0">
@@ -192,14 +209,16 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
               <svg aria-hidden className="absolute h-0 w-0" width="0" height="0">
                 <defs>
                   <linearGradient id="dnaChessW" x1="0" y1="0" x2="0" y2="1" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#ffffff" />
-                    <stop offset="55%" stopColor="#e4eaf4" />
-                    <stop offset="100%" stopColor="#96a1b8" />
+                    <stop offset="0%" stopColor="#fffdf6" />
+                    <stop offset="42%" stopColor="#f6e7c7" />
+                    <stop offset="76%" stopColor="#e2c194" />
+                    <stop offset="100%" stopColor="#cba97b" />
                   </linearGradient>
                   <linearGradient id="dnaChessB" x1="0" y1="0" x2="0" y2="1" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#7a8096" />
-                    <stop offset="45%" stopColor="#3a3d55" />
-                    <stop offset="100%" stopColor="#11101d" />
+                    <stop offset="0%" stopColor="#5a5476" />
+                    <stop offset="28%" stopColor="#3d3650" />
+                    <stop offset="58%" stopColor="#262034" />
+                    <stop offset="100%" stopColor="#161120" />
                   </linearGradient>
                 </defs>
               </svg>
@@ -217,18 +236,18 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                   }}
                 />
 
-                {/* raised rim + purple neon edge glow */}
+                {/* raised rim — slim inner bevel (outer stage owns the drop shadows) */}
                 <div
                   className="relative rounded-[12px] p-[4px]"
                   style={{
-                    background: "linear-gradient(150deg,#7c3aed,#4c1d95 40%,#312e81 70%,#1e1b4b)",
+                    background: "linear-gradient(150deg,#8b5cf6,#4c1d95 40%,#37306b 70%,#27204d)",
                     boxShadow:
-                      "0 0 0 1px rgba(167,139,250,0.35), 0 0 18px rgba(147,51,234,0.55), 0 0 46px rgba(124,58,237,0.3), 0 1px 0 #8b5cf6, 0 3px 0 #3b1468, 0 6px 0 #2a0f52, 0 10px 0 #1c0a38, 0 14px 22px rgba(0,0,0,0.75)",
+                      "0 0 0 1px rgba(167,139,250,0.28), 0 0 12px rgba(147,51,234,0.32), inset 0 0 0 1px rgba(255,255,255,0.05), 0 2px 0 #241040, 0 5px 0 #180b2e, 0 8px 14px rgba(0,0,0,0.5)",
                   }}
                 >
                   <div
                     className="relative grid aspect-square grid-cols-8 grid-rows-8 overflow-hidden rounded-[8px] ring-1 ring-white/10"
-                    style={{ background: "#000" }}
+                    style={{ background: "#0d0820" }}
                   >
                     {Array.from({ length: 8 }).map((_, r) =>
                       Array.from({ length: 8 }).map((_, c) => {
@@ -239,6 +258,9 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                         const piece = chess.get(square as Square);
                         const isDark = (actualR + actualC) % 2 === 1;
                         const isSelected = selected === idx;
+                        const isLastFrom = lastMove?.from === idx;
+                        const isLastTo = lastMove?.to === idx;
+                        const isLastMoveHighlight = isLastFrom || isLastTo;
                         const isLegalTarget = legalMoves.some(m => squareNum(m.to) === idx);
                         const isCheck = inCheck && piece?.type === "k" && piece?.color === chess.turn();
 
@@ -247,27 +269,37 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                             key={idx}
                             onClick={() => onSquareClick(idx)}
                             className="relative flex cursor-pointer items-center justify-center"
-                            style={{
-                              background: isDark
-                                ? "linear-gradient(150deg,#d3a579,#b58863 55%,#96694b)"
-                                : "linear-gradient(150deg,#fdf2dc,#f0d9b5 55%,#e2c69e)",
-                            }}
+                            style={{ background: isDark ? SQ_DARK : SQ_LIGHT }}
                           >
-                            {/* selected / check tint under the piece */}
-                            {(isSelected || isCheck) && (
+                            {/* last move highlight — cyan for AI, purple for humans */}
+                            {isLastMoveHighlight && !isSelected && (
                               <div
                                 className={cn(
                                   "pointer-events-none absolute inset-0",
-                                  isSelected && !isCheck && "bg-yellow-400/55",
-                                  isCheck && "bg-rose-500/75"
+                                  lastMove?.isAi ? "bg-cyan-400/20" : "bg-violet-500/20"
                                 )}
                               />
                             )}
+                            {/* soft human selection / check glow */}
                             {isSelected && (
-                              <div className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-yellow-300/80" />
+                              <div className="pointer-events-none absolute inset-0 bg-violet-500/25" />
                             )}
                             {isCheck && (
-                              <div className="pointer-events-none absolute inset-0 shadow-inner ring-2 ring-inset ring-rose-300/80" />
+                              <div className="pointer-events-none absolute inset-0 bg-rose-500/40" />
+                            )}
+                            {isSelected && (
+                              <div className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-violet-300/70" />
+                            )}
+                            {isCheck && (
+                              <div className="pointer-events-none absolute inset-0 shadow-inner ring-2 ring-inset ring-rose-300/70" />
+                            )}
+                            {isLastMoveHighlight && !isSelected && (
+                              <div
+                                className={cn(
+                                  "pointer-events-none absolute inset-0 ring-1 ring-inset",
+                                  lastMove?.isAi ? "ring-cyan-300/50" : "ring-violet-300/45"
+                                )}
+                              />
                             )}
 
                             {/* Square Coordinate Labels */}
@@ -275,7 +307,7 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                               <span
                                 className={cn(
                                   "absolute left-[3px] top-[2px] z-[3] text-[8px] font-bold leading-none",
-                                  isDark ? "text-[#f7e3c3]" : "text-[#9c6f4e]"
+                                  isDark ? "text-[#e2d2b2]" : "text-[#7d5f42]"
                                 )}
                               >
                                 {8 - actualR}
@@ -285,7 +317,7 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                               <span
                                 className={cn(
                                   "absolute bottom-[2px] right-[3px] z-[3] text-[8px] font-bold leading-none",
-                                  isDark ? "text-[#f7e3c3]" : "text-[#9c6f4e]"
+                                  isDark ? "text-[#e2d2b2]" : "text-[#7d5f42]"
                                 )}
                               >
                                 {"abcdefgh"[actualC]}
@@ -315,22 +347,35 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                                   style={{
                                     filter:
                                       piece.color === "w"
-                                        ? "drop-shadow(0 1.2px 0.6px rgba(40,20,70,0.55))"
-                                        : "drop-shadow(0 1.2px 0.6px rgba(0,0,0,0.6))",
+                                        ? "drop-shadow(0 1.6px 1px rgba(96,48,14,0.5)) drop-shadow(0 3.5px 3px rgba(30,10,40,0.3))"
+                                        : "drop-shadow(0 1.6px 1px rgba(0,0,0,0.7)) drop-shadow(0 3.5px 3px rgba(76,29,149,0.4))",
                                   }}
                                 >
                                   <g fill={piece.color === "w" ? "url(#dnaChessW)" : "url(#dnaChessB)"}>
                                     <PieceShapes type={piece.type} />
                                   </g>
                                 </svg>
+                                {/* material sheen — warm on ivory, faint purple on charcoal */}
+                                <div
+                                  aria-hidden
+                                  className="absolute left-[12%] top-[2%] h-[34%] w-[76%] rounded-t-full"
+                                  style={{
+                                    background:
+                                      piece.color === "w"
+                                        ? "radial-gradient(80% 100% at 50% 0%, rgba(255,255,255,0.5), rgba(255,255,255,0) 72%)"
+                                        : "radial-gradient(80% 100% at 50% 0%, rgba(167,139,250,0.3), rgba(167,139,250,0) 74%)",
+                                  }}
+                                />
                               </div>
                             )}
 
                             {isLegalTarget && (
                               <div
                                 className={cn(
-                                  "absolute z-20 h-3 w-3 rounded-full",
-                                  piece ? "h-8 w-8 rounded-full border-4 border-black/20" : "bg-black/10"
+                                  "absolute z-20 rounded-full transition-transform",
+                                  piece
+                                    ? "h-7 w-7 border-[3px] border-violet-300/55 shadow-[0_0_10px_rgba(139,92,246,0.35)]"
+                                    : "h-2.5 w-2.5 bg-violet-300/60 shadow-[0_0_8px_rgba(139,92,246,0.4)]"
                                 )}
                               />
                             )}
@@ -344,9 +389,9 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
             </div>
           ) : (
             /* ------------------------------------------------------------------ */
-            /* 2D BOARD — original flat look                                       */
+            /* 2D BOARD — flat marble look, same interaction model                 */
             /* ------------------------------------------------------------------ */
-            <div className="relative grid aspect-square w-full grid-cols-8 grid-rows-8 border-4 border-black/20 rounded-sm overflow-hidden shadow-2xl">
+            <div className="relative grid aspect-square w-full grid-cols-8 grid-rows-8 overflow-hidden rounded-[2px] ring-1 ring-black/40 shadow-inner">
               {Array.from({ length: 8 }).map((_, r) =>
                 Array.from({ length: 8 }).map((_, c) => {
                   const actualR = isBlack ? 7 - r : r;
@@ -356,6 +401,9 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                   const piece = chess.get(square as Square);
                   const isDark = (actualR + actualC) % 2 === 1;
                   const isSelected = selected === idx;
+                  const isLastFrom = lastMove?.from === idx;
+                  const isLastTo = lastMove?.to === idx;
+                  const isLastMoveHighlight = isLastFrom || isLastTo;
                   const isLegalTarget = legalMoves.some(m => squareNum(m.to) === idx);
                   const isCheck = inCheck && piece?.type === "k" && piece?.color === chess.turn();
 
@@ -363,26 +411,52 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
                     <div
                       key={idx}
                       onClick={() => onSquareClick(idx)}
-                      className={cn(
-                        "relative flex items-center justify-center cursor-pointer transition-colors",
-                        isDark ? "bg-[#b58863]" : "bg-[#f0d9b5]",
-                        isSelected && "bg-yellow-400/60",
-                        isCheck && "bg-rose-500/80 shadow-inner"
-                      )}
+                      className="relative flex cursor-pointer items-center justify-center"
+                      style={{ background: isDark ? SQ_DARK : SQ_LIGHT }}
                     >
+                      {/* soft glows (last move / selection / check) */}
+                      {isLastMoveHighlight && !isSelected && (
+                        <div
+                          className={cn(
+                            "pointer-events-none absolute inset-0",
+                            lastMove?.isAi ? "bg-cyan-400/20" : "bg-violet-500/20"
+                          )}
+                        />
+                      )}
+                      {isSelected && (
+                        <div className="pointer-events-none absolute inset-0 bg-violet-500/25" />
+                      )}
+                      {isCheck && (
+                        <div className="pointer-events-none absolute inset-0 bg-rose-500/40" />
+                      )}
+                      {isSelected && (
+                        <div className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-violet-300/70" />
+                      )}
+                      {isCheck && (
+                        <div className="pointer-events-none absolute inset-0 shadow-inner ring-2 ring-inset ring-rose-300/70" />
+                      )}
+                      {isLastMoveHighlight && !isSelected && (
+                        <div
+                          className={cn(
+                            "pointer-events-none absolute inset-0 ring-1 ring-inset",
+                            lastMove?.isAi ? "ring-cyan-300/50" : "ring-violet-300/45"
+                          )}
+                        />
+                      )}
+
                       {/* Square Coordinate Labels */}
                       {actualC === 0 && (
                         <span className={cn(
-                          "absolute top-0.5 left-0.5 text-[8px] font-bold",
-                          isDark ? "text-[#f0d9b5]" : "text-[#b58863]"
+                          "absolute top-0.5 left-1 text-[8px] font-bold",
+                          isDark ? "text-[#e2d2b2]" : "text-[#7d5f42]"
                         )}>
                           {8 - actualR}
                         </span>
                       )}
                       {actualR === 7 && (
                         <span className={cn(
-                          "absolute bottom-0.5 right-0.5 text-[8px] font-bold",
-                          isDark ? "text-[#f0d9b5]" : "text-[#b58863]"
+                          "absolute bottom-0.5 right-1 text-[8px] font-bold",
+                          isDark ? "text-[#e2d2b2]" : "text-[#7d5f42]"
                         )}>
                           {"abcdefgh"[actualC]}
                         </span>
@@ -390,12 +464,13 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
 
                       {piece && (
                         <span
-                          className={cn(
-                            "text-4xl sm:text-5xl select-none z-10 drop-shadow-sm",
-                            piece.color === "w" ? "text-white" : "text-slate-900"
-                          )}
+                          className="z-10 select-none text-4xl sm:text-5xl"
                           style={{
-                            textShadow: piece.color === "w" ? "0 0 2px black" : "0 0 2px white",
+                            color: piece.color === "w" ? "#f6ead2" : "#241f35",
+                            textShadow:
+                              piece.color === "w"
+                                ? "0 1px 1px rgba(96,48,14,0.45), 0 2px 4px rgba(30,10,40,0.3)"
+                                : "0 1px 1px rgba(255,255,255,0.12), 0 2px 3px rgba(0,0,0,0.45), 0 0 8px rgba(139,92,246,0.35)",
                           }}
                         >
                           {PIECES[piece.color + piece.type.toUpperCase()]}
@@ -404,8 +479,10 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
 
                       {isLegalTarget && (
                         <div className={cn(
-                          "absolute w-3 h-3 rounded-full z-20",
-                          piece ? "border-4 border-black/20 w-8 h-8 rounded-full" : "bg-black/10"
+                          "absolute z-20 rounded-full",
+                          piece
+                            ? "h-7 w-7 border-[3px] border-violet-300/55 shadow-[0_0_10px_rgba(139,92,246,0.35)]"
+                            : "h-2.5 w-2.5 bg-violet-300/60 shadow-[0_0_8px_rgba(139,92,246,0.4)]"
                         )} />
                       )}
                     </div>

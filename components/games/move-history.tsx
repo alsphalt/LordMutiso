@@ -1,16 +1,18 @@
 "use client";
 
-import { type GameSnapshot, type MoveDTO, COLOR_HEX } from "@/lib/games/types";
-import { cn } from "@/lib/utils";
 import { useEffect, useRef } from "react";
+import { History } from "lucide-react";
+import { type GameSnapshot, type MoveDTO } from "@/lib/games/types";
+import { cn } from "@/lib/utils";
 
 interface MoveHistoryProps {
   snapshot: GameSnapshot;
 }
 
+/** MOVE HISTORY panel — glass card with compact, reference-style rows. */
 export function MoveHistory({ snapshot }: MoveHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { recentMoves, game } = snapshot;
+  const { recentMoves, game, mySeatNumber, seats } = snapshot;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -19,51 +21,91 @@ export function MoveHistory({ snapshot }: MoveHistoryProps) {
   }, [recentMoves.length]);
 
   return (
-    <div className="flex flex-col h-full">
-      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider px-1 mb-2">
-        Move History
-      </h3>
-      <div 
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl">
+      {/* header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-3.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <History className="h-3.5 w-3.5 text-violet-300/80" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-400">
+            Move History
+          </span>
+        </div>
+        {recentMoves.length > 0 && (
+          <span className="font-mono text-[10px] tabular-nums text-slate-600">
+            {recentMoves.length}
+          </span>
+        )}
+      </div>
+
+      {/* scrollable list */}
+      <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto pr-2 flex flex-col gap-1.5 scrollbar-thin scrollbar-thumb-white/10"
+        className="flex-1 overflow-y-auto px-2.5 py-2 [scrollbar-width:thin]"
       >
         {recentMoves.length === 0 ? (
-          <div className="text-xs text-slate-500 italic p-2 bg-white/5 rounded-lg border border-dashed border-white/5">
-            No moves yet
+          <div className="flex h-full min-h-[90px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/[0.06] text-center">
+            <p className="text-xs italic text-slate-600">No moves yet — first move opens the game.</p>
           </div>
         ) : (
-          recentMoves.map((move) => (
-            <div 
-              key={move.id} 
-              className="flex items-start gap-3 p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/[0.08] transition-colors group"
-            >
-              <div className="flex flex-col items-center gap-1 shrink-0 w-8">
-                <span className="text-[10px] font-mono text-slate-500">{move.moveNumber}.</span>
-                <div 
-                  className="w-2 h-2 rounded-full ring-2 ring-black shadow-[0_0_8px_rgba(0,0,0,0.5)]" 
-                  style={{ backgroundColor: COLOR_HEX[snapshot.seats.find(s => s.playerNumber === move.playerNumber)?.color || "WHITE"] }}
-                />
-              </div>
-              
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-baseline gap-2 mb-0.5">
-                  <span className="text-[11px] font-semibold text-slate-300 truncate">
-                    {move.username}
-                  </span>
-                  <span className="text-[9px] text-slate-500 font-mono">
-                    {new Date(move.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                  </span>
+          <div className="flex flex-col gap-1">
+            {recentMoves.map((move, i) => {
+              const isLatest = i === recentMoves.length - 1;
+              const seat = seats.find((s) => s.playerNumber === move.playerNumber);
+              const isAi = !!seat?.isAi;
+              const isMine = mySeatNumber === move.playerNumber;
+              return (
+                <div
+                  key={move.id}
+                  className={cn(
+                    "rounded-xl border px-2.5 py-1.5 transition-colors",
+                    isLatest
+                      ? "border-violet-400/25 bg-violet-500/[0.08]"
+                      : "border-transparent bg-white/[0.02] hover:bg-white/[0.04]"
+                  )}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="w-7 shrink-0 font-mono text-[10px] tabular-nums text-slate-600">
+                      {move.moveNumber}.
+                    </span>
+                    <span
+                      className={cn(
+                        "truncate text-[11px] font-semibold leading-none",
+                        isAi
+                          ? "text-cyan-300/90"
+                          : isMine
+                          ? "text-violet-300"
+                          : "text-slate-300"
+                      )}
+                    >
+                      {move.username}
+                      {isMine && <span className="ml-1 font-normal text-violet-400/70">(You)</span>}
+                    </span>
+                    <span className="ml-auto shrink-0 font-mono text-[9px] tabular-nums text-slate-600">
+                      {timeOf(move.createdAt)}
+                    </span>
+                  </div>
+                  <p
+                    className={cn(
+                      "mt-0.5 pl-9 text-[11px] font-medium leading-snug",
+                      isLatest ? "text-violet-100" : "text-slate-300/80"
+                    )}
+                  >
+                    {formatMove(move, game.type)}
+                  </p>
                 </div>
-                <div className="text-xs text-slate-100 font-medium">
-                  {formatMove(move, game.type)}
-                </div>
-              </div>
-            </div>
-          ))
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
   );
+}
+
+function timeOf(isoStr: string): string {
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 function formatMove(move: MoveDTO, type: string): string {
@@ -77,7 +119,10 @@ function formatMove(move: MoveDTO, type: string): string {
   switch (type) {
     case "LUDO":
       if (data.kind === "ludo-move") {
-        return `🎲 ${data.die} • Token ${data.token + 1}: ${data.fromR === -1 ? "Base" : data.fromR} → ${data.toR === 56 ? "Finish" : data.toR}${data.capture ? " ⚔️" : ""}${data.extraRoll ? " (+1 roll)" : ""}`;
+        return `🎲 ${data.die} · Token ${data.token + 1}: ${data.fromR === -1 ? "Base" : data.fromR} → ${data.toR === 56 ? "Finish" : data.toR}${data.capture ? " ⚔️" : ""}${data.extraRoll ? " (+1 roll)" : ""}`;
+      }
+      if (data.kind === "ludo-roll") {
+        return `🎲 Rolled ${data.die}${data.autoPassed ? " (auto-pass)" : ""}`;
       }
       return "Action";
     case "CHESS":

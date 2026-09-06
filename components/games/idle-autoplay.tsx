@@ -58,7 +58,10 @@ export function autoActionFor(snapshot: GameSnapshot): Record<string, unknown> |
 /**
  * If the human player does nothing for IDLE_LIMIT_S seconds on their turn,
  * the game politely plays a legal best move for them (server still validates
- * everything). Shows a small countdown bubble while idle.
+ * everything). Firing logic ONLY — the countdown visuals live in
+ * components/games/chess-ui/turn-pill.tsx (same reset key, so both stay in
+ * lock-step). Kept in its own component so the auto-move behaviour is never
+ * coupled to layout.
  */
 export function IdleAutoplay({ snapshot, act }: { snapshot: GameSnapshot; act: (body: any) => Promise<any> }) {
   const [left, setLeft] = React.useState(0);
@@ -119,15 +122,8 @@ export function IdleAutoplay({ snapshot, act }: { snapshot: GameSnapshot; act: (
 
   if (!myTurn || left <= 0) return null;
 
-  return (
-    <div className="pointer-events-none fixed left-1/2 top-[4.2rem] z-[70] -translate-x-1/2">
-      <div className="flex items-center gap-2 rounded-full border border-amber-400/30 bg-black/70 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-amber-300 shadow-lg backdrop-blur-md">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
-        </span>
-        Auto in {left}s
-      </div>
-    </div>
-  );
+  // Visual countdown is rendered by TurnStatusPill (chess-ui) — same timer
+  // semantics, so nothing here needs to draw. Keep this hook mounted so the
+  // auto-move watchdog above keeps running.
+  return null;
 }
