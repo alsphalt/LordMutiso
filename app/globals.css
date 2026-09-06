@@ -48,3 +48,13 @@
                 linear-gradient(180deg, #0c0718 0%, #07030f 100%);
   }
 }
+
+/* ===== PWA / installed-app safe areas ===== */
+.env-pb { padding-bottom: env(safe-area-inset-bottom); }
+.env-pt { padding-top: env(safe-area-inset-top); }
+
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+  }
+}

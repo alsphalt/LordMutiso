@@ -1,0 +1,49 @@
+{
+  "name": "DARKNOTE GAMING ARENA",
+  "short_name": "DARKNOTE",
+  "description": "Play Ludo, Chess and Checkers online or against AI. Install for a faster, app-like experience.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0c0718",
+  "background_color": "#07030f",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Play Ludo",
+      "short_name": "Ludo",
+      "url": "/lobby?type=LUDO"
+    },
+    {
+      "name": "Play Chess",
+      "short_name": "Chess",
+      "url": "/lobby?type=CHESS"
+    },
+    {
+      "name": "Leaderboard",
+      "short_name": "Leaderboard",
+      "url": "/leaderboard"
+    }
+  ]
+}
