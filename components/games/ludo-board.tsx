@@ -1118,28 +1118,28 @@ export function LudoBoard({
               transform: `translate3d(${x - tpx / 2}px, ${y - tpx / 2}px, 0)`,
               transition: glide ? "transform 150ms cubic-bezier(.25,.6,.3,1)" : "none",
               willChange: "transform",
-              // Realistic glossy token: specular highlight, body gradient,
-              // rim light + soft contact shadow for believable depth.
-              background: `radial-gradient(circle at 31% 22%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 42%), radial-gradient(circle at 42% 40%, ${shade(seat.color, 34)} 0%, ${seat.color} 46%, ${shade(seat.color, -32)} 100%)`,
-              border: `2px solid rgba(255,255,255,0.92)`,
+              // Physical glossy token: strong specular dome, body gradient,
+              // dark lower band for thickness, rim light, dark edge ring and a
+              // soft contact shadow so it sits on the board like a real piece.
+              background: `radial-gradient(circle at 50% 8%, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0) 30%), radial-gradient(circle at 33% 26%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 42%), radial-gradient(circle at 42% 42%, ${shade(seat.color, 36)} 0%, ${seat.color} 44%, ${shade(seat.color, -38)} 100%)`,
+              border: `2px solid rgba(255,255,255,0.95)`,
               boxShadow: legal
-                ? `0 0 0 2px rgba(255,255,255,0.95), 0 0 13px 1px ${alpha(seat.color, 0.85)}, 0 3px 6px rgba(0,0,0,0.45)`
-                : `0 2px 4px rgba(0,0,0,0.4), 0 7px 12px -5px rgba(0,0,0,0.55)`,
+                ? `0 0 0 2px rgba(255,255,255,0.95), 0 0 13px 1px ${alpha(seat.color, 0.85)}, 0 7px 12px rgba(0,0,0,0.5), inset 0 -${Math.round(tpx * 0.16)}px 0 rgba(0,0,0,0.3), inset 0 0 0 2px rgba(0,0,0,0.18)`
+                : `0 4px 6px rgba(0,0,0,0.4), 0 10px 16px -6px rgba(0,0,0,0.55), inset 0 -${Math.round(tpx * 0.16)}px 0 rgba(0,0,0,0.3), inset 0 0 0 2px rgba(0,0,0,0.18)`,
               touchAction: "manipulation",
             }}
           >
             <span
               className={cn(
-                "pointer-events-none absolute inset-[16%] rounded-full transition-none",
+                "pointer-events-none absolute inset-[15%] rounded-full transition-none",
                 effect === "land" && "fx-land",
                 effect === "capture" && "fx-capture"
               )}
               style={{
-                background: `linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0) 55%)`,
-                boxShadow:
-                  effect === "capture"
-                    ? "none"
-                    : "inset 0 -4px 6px rgba(0,0,0,0.16)",
+                // dome shading: bright top, falls to shadow at the base edge
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.08) 44%, rgba(0,0,0,0.32) 100%)",
+                boxShadow: effect === "capture" ? "none" : "0 0 0 1px rgba(0,0,0,0.08)",
               }}
             />
           </button>
@@ -1165,11 +1165,17 @@ export function LudoBoard({
 
   return (
     <div className="flex w-full flex-col gap-3">
-      {/* board */}
+      {/* board — presented on a slight 3D slant like a real game table */}
       <div
         ref={boardRef}
         className="relative w-full select-none"
-        style={{ aspectRatio: "1 / 1", touchAction: "manipulation" }}
+        style={{
+          aspectRatio: "1 / 1",
+          touchAction: "manipulation",
+          transform: "perspective(1500px) rotateX(13deg)",
+          transformOrigin: "50% 46%",
+          willChange: "transform",
+        }}
       >
         <div
           className="absolute inset-0 rounded-2xl"
