@@ -8,16 +8,32 @@ import { cn } from "@/lib/utils";
 import { legalLudoMoves, ludoSafeCells, LUDO_FINISH } from "@/lib/games/ludo/engine";
 import type { LudoState } from "@/lib/games/ludo/engine";
 import { sfx, unlockAudio, isSoundMuted, setSoundMuted } from "@/lib/audio/sound";
+import { LudoPhysicalDice } from "./ludo-dice/physics-dice";
+import type { PhysicsDiceHandle } from "./ludo-dice/physics-dice";
+import type { LudoDicePose } from "@/lib/games/ludo/dice";
+import {
+  DEFAULT_DICE_POSE,
+  normalizeDicePose,
+  posesEqual,
+  poseQuatForFace,
+} from "@/lib/games/ludo/dice";
 
 /* =====================================================================
  * DARKNOTE Ludo board — polished gameplay client.
  *
  * - Logical grid of 15x15 cells; every cell centre is derived from the
  *   grid, so pieces scale with the board on any screen.
- * - Server-confirmed moves (from the snapshot) are animated box-by-box;
- *   rolls spin the 3D dice until it settles on the authoritative result.
- * - Input is locked while dice/pieces animate so rapid taps can never
- *   cause double rolls or conflicting moves.
+ * - The dice is a REAL physics object (cannon-es) living INSIDE the board.
+ *   Its pose is part of the authoritative game state (state.dice): after a
+ *   roll the cube STAYS where it landed and the next player rolls from that
+ *   exact spot — it is never teleported or reset.
+ * - The current player swipes the die; the roll VALUE is the physical top
+ *   face of the settled cube, sent to the server with the final pose.
+ * - Remote/AI rolls replay onto the SAME server-confirmed pose so every
+ *   client converges on one result.
+ * - Server-confirmed token moves are animated box-by-box; input is locked
+ *   while dice/pieces animate so rapid taps can never cause double rolls or
+ *   conflicting moves.
  * ===================================================================== */
 
 const CREAM = "#f6ecd2";
@@ -324,433 +340,6 @@ const StaticLayers = React.memo(function StaticLayers({
   );
 });
 
-/* ------------------------------ 3D dice ------------------------------ */
-
-const FACE_ORIENT: Record<number, [number, number]> = {
-  1: [0, 0],
-  2: [90, 0],
-  3: [0, -90],
-  4: [0, 90],
-  5: [-90, 0],
-  6: [180, 0],
-};
-
-const FACE_DOTS: Record<number, number[]> = {
-  1: [4],
-  2: [0, 8],
-  3: [0, 4, 8],
-  4: [0, 2, 6, 8],
-  5: [0, 2, 4, 6, 8],
-  6: [0, 2, 3, 5, 6, 8],
-};
-
-function DiceCube({
-  sizePx,
-  face,
-  spinKey,
-  target,
-  interactive,
-  dim,
-  onRoll,
-  travelHalf,
-  color,
-}: {
-  sizePx: number;
-  face: number | null;
-  spinKey: number;
-  target: number | null;
-  interactive: boolean;
-  dim: boolean;
-  onRoll: () => void;
-  /** Max distance the die may travel from the board centre (px). */
-  travelHalf?: number;
-  /** Colour of the current player — the die matches whose turn it is. */
-  color?: string;
-}) {
-  const cubeRef = React.useRef<HTMLDivElement>(null);
-  const shadowRef = React.useRef<HTMLDivElement>(null);
-  const curRef = React.useRef<[number, number]>([0, 0]);
-  const gestureRef = React.useRef<{
-    sx: number; sy: number; cx: number; cy: number; t0: number;
-    px: number; py: number; pt: number; vx: number; vy: number;
-  } | null>(null);
-  const swipeRef = React.useRef<{ dx: number; dy: number; vx: number; vy: number } | null>(null);
-  const [pressed, setPressed] = React.useState(false);
-  const s = sizePx || 96;
-  const h = s / 2;
-
-  // Flight tilt — used ONLY while tumbling. As the die settles, the tilt is
-  // eased out so it stops perfectly flat on ONE face looking at the player.
-  const TILT_X = -22;
-  const TILT_Y = -26;
-  const col = color ?? "#7c5cf6";
-  const faceBg = (c: string) =>
-    `radial-gradient(circle at 30% 22%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.07) 46%), linear-gradient(160deg, ${shade(c, 22)} 0%, ${c} 50%, ${shade(c, -28)} 100%)`;
-
-  const faceNodes: ReactNode[] = [];
-  const defs: Array<[string, string, number]> = [
-    ["front", "", 1],
-    ["back", "rotateY(180deg)", 6],
-    ["right", "rotateY(90deg)", 3],
-    ["left", "rotateY(-90deg)", 4],
-    ["top", "rotateX(90deg)", 2],
-    ["bottom", "rotateX(-90deg)", 5],
-  ];
-  const faceRadius = Math.max(6, Math.round(s * 0.13));
-  for (const [name, rot, num] of defs) {
-    const dots = FACE_DOTS[num] ?? [];
-    faceNodes.push(
-      <div
-        key={name}
-        className="absolute"
-        style={{
-          inset: 0,
-          transform: `${rot} translateZ(${h}px)`,
-          borderRadius: faceRadius,
-          background: faceBg(col),
-          border: "1px solid rgba(0,0,0,0.32)",
-          boxShadow: `inset 0 -5px 9px ${shade(col, -38)}80, inset 0 2px 3px rgba(255,255,255,0.5)`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          overflow: "hidden",
-        }}
-      >
-        <div className="grid h-full w-full grid-cols-3 grid-rows-3 p-[13%]">
-          {Array.from({ length: 9 }).map((_, i) => (
-            <div key={i} className="flex items-center justify-center">
-              {dots.includes(i) && (
-                <span
-                  className="block aspect-square w-[86%] rounded-full"
-                  style={{
-                    background: "radial-gradient(circle at 36% 30%, #ffffff 0%, #eef1f8 58%, #d4dae8 100%)",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.42), inset 0 -1px 1px rgba(0,0,0,0.14)",
-                  }}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-        {/* glossy sheen */}
-        <span
-          className="pointer-events-none absolute inset-0"
-          style={{
-            borderRadius: faceRadius,
-            background:
-              "linear-gradient(115deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.12) 26%, rgba(255,255,255,0) 44%), linear-gradient(295deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 30%)",
-          }}
-        />
-      </div>
-    );
-  }
-
-  /**
-   * Thrown-dice physics roll — lightweight rAF simulation, GPU-only transforms.
-   *
-   * Motion model (no snapping, no sudden freeze):
-   *  - ROTATION decays exponentially per axis: sweep·(1 − e^(−λt)). The die
-   *    spins hard, slows, keeps making tiny decaying movements, and converges
-   *    smoothly & exactly on the server-confirmed face (limit of the curve).
-   *  - POSITION is integrated with delta time in the board plane (x + up-board
-   *    depth) with normal-based wall reflections, floor bounces, and
-   *    frame-rate independent friction.
-   *  - SETTLE requires linear & angular speeds to stay below thresholds for a
-   *    continuous stability window — never a velocity < ε → freeze.
-   */
-  React.useEffect(() => {
-    const el = cubeRef.current;
-    const sh = shadowRef.current;
-    if (!el || spinKey === 0) return;
-    const targetFace = target ?? 1;
-    const [ax, ay] = FACE_ORIENT[targetFace] ?? [0, 0];
-    const [rx0, ry0] = curRef.current;
-
-    const norm360 = (v: number) => ((v % 360) + 360) % 360;
-    const shortest = (a: number, b: number) => ((norm360(a) - norm360(b) + 540) % 360) - 180;
-
-    const sx = shortest(ax, rx0);
-    const sy = shortest(ay, ry0);
-    const fullX = 360 * (2 + Math.floor(Math.random() * 2)); // 2–3 full tumbles
-    const fullY = 360 * (1 + Math.floor(Math.random() * 2)); // 1–2
-    const sweepX = sx >= 0 ? sx + fullX : sx - fullX;
-    const sweepY = sy >= 0 ? sy + fullY : sy - fullY;
-    const lamX = 4.3 + Math.random() * 0.9; // decay (1/s) — settle ~1s
-    const lamY = 3.6 + Math.random() * 0.8;
-
-    // ---------- linear physics (delta time; units scale with die size only) ----------
-    const sc = s / 96;
-    const G = 2100 * sc; // gravity (px/s²)
-    // Allowed travel: the whole board when a size is passed in (die can roll
-    // to every corner/side and bounce off the board edge), otherwise a small
-    // centre area as a safe fallback.
-    const travelX = travelHalf ?? s * 0.55;
-    const travelU = travelHalf ?? s * 0.5;
-    let px = 0; // horizontal position (screen x)
-    let pu = 0; // up-board position (screen -y / board depth)
-    let h = 0; // height above the board (screen +z toward viewer)
-    let vx = 0;
-    let vu = 0;
-    let vz = 0;
-
-    // Swipe -> throw vector. Direction from the whole gesture (normalised, so
-    // diagonal swipes work), power from distance AND velocity; capped.
-    const sw = swipeRef.current;
-    const gdx = sw?.dx ?? 0;
-    const gdy = sw?.dy ?? 0;
-    const glen = Math.hypot(gdx, gdy);
-    const gspd = Math.hypot(sw?.vx ?? 0, sw?.vy ?? 0);
-    const isSwipe = glen >= 8; // taps stay taps (dead-zone for accidental drags)
-    const rnd = Math.random;
-    const dxU = isSwipe ? gdx / (glen || 1) : rnd() * 2 - 1;
-    const dyU = isSwipe ? gdy / (glen || 1) : 0.6 + rnd() * 0.3; // taps toss gently up-board
-    const distFrac = glen / s; // measured in die-sizes -> screen-size independent
-    const velFrac = gspd / (s * 12);
-    const power = Math.min(1.55, 0.5 + distFrac * 0.42 + velFrac * 0.5);
-    // A real swipe throws across the board (corners/sides reachable); a tap
-    // gives a short local toss so it never flies off on tiny taps.
-    const throwV = isSwipe ? s * (1.0 + 2.4 * power) : s * (0.28 + 0.3 * power);
-    vx = dxU * throwV;
-    vu = dyU * throwV * 0.9;
-    vz = (1.5 + 0.8 * power) * s * (dyU < 0 ? 1.15 : 1); // upward toss
-    const wallRest = 0.62; // wall/edge energy retained (normal reflection)
-    const floorRest = 0.44; // vertical restitution
-    const maxT = 1.9; // hard safety cap
-
-    const startAt = performance.now();
-    let raf = 0;
-    let stableMs = 0;
-    let finalized = false;
-    let prev = performance.now();
-
-    const frame = (now: number) => {
-      if (finalized) return;
-      const dt = Math.min(0.033, Math.max(0.0005, (now - prev) / 1000));
-      prev = now;
-      const t = (now - startAt) / 1000;
-
-      // --- linear integration ---
-      vz -= G * dt;
-      h += vz * dt;
-      px += vx * dt;
-      pu += vu * dt;
-
-      // Wall collisions (board edges): reflect along the collision normal,
-      // lose energy, allow several bounces while crossing the board.
-      if (px > travelX) { px = travelX; vx = -vx * wallRest; }
-      else if (px < -travelX) { px = -travelX; vx = -vx * wallRest; }
-      if (pu > travelU) { pu = travelU; vu = -vu * wallRest; }
-      else if (pu < -travelU) { pu = -travelU; vu = -vu * wallRest; }
-
-      // Floor (board surface): bounce while energetic, then keep sliding.
-      if (h <= 0) {
-        h = 0;
-        if (vz < -90 * sc) {
-          vz = -vz * floorRest; // small believable bounce
-          vx *= 0.86;
-          vu *= 0.86;
-        } else {
-          vz = 0;
-          if (Math.abs(vx) < s * 0.4 && Math.abs(vu) < s * 0.4) {
-            vx = 0;
-            vu = 0;
-          }
-        }
-      }
-
-      // Frame-rate independent friction (rolling friction on the board is
-      // light enough to glide across; air drag is weak while airborne).
-      const groundFric = h === 0 ? Math.pow(0.5, dt) : Math.pow(0.88, dt);
-      vx *= groundFric;
-      vu *= groundFric;
-
-      // --- rotation: exponential decay (natural slow-down + micro-roll) ---
-      const kX = 1 - Math.exp(-lamX * t);
-      const kY = 1 - Math.exp(-lamY * t);
-      // Tiny decaying multi-axis wobble for the final "micro-roll".
-      const wobA = Math.sin(t * 8.6) * Math.exp(-(lamX + 2.2) * t) * 9;
-      const wobB = Math.sin(t * 7.4 + 1.9) * Math.exp(-(lamY + 2.6) * t) * 8;
-      const rx = rx0 + sweepX * kX;
-      const ry = ry0 + sweepY * kY;
-      const angVX = Math.abs(sweepX) * lamX * Math.exp(-lamX * t);
-      const angVY = Math.abs(sweepY) * lamY * Math.exp(-lamY * t);
-      const linSpd = Math.hypot(vx, vu);
-
-      // Ground shadow tracks height & position.
-      if (sh) {
-        const liftF = Math.max(0, Math.min(1, h / (s * 1.1)));
-        const shScale = 1 - 0.3 * liftF;
-        sh.style.opacity = String(0.46 - 0.28 * liftF);
-        sh.style.transform = `translate(-50%, 0) translate(${px.toFixed(1)}px, ${(pu * 0.85).toFixed(1)}px) scale(${shScale.toFixed(3)})`;
-      }
-
-      // Ease the tilt out over the last ~30% so it stops face-on (one face).
-      const tiltA = t < 0.68 ? 1 : Math.max(0, 1 - (t - 0.68) / 0.32);
-      el.style.transform = `translate3d(${px.toFixed(1)}px, ${pu.toFixed(1)}px, ${h.toFixed(1)}px) rotateX(${(TILT_X * tiltA).toFixed(2)}deg) rotateY(${(TILT_Y * tiltA).toFixed(2)}deg) rotateX(${(rx + wobA).toFixed(2)}deg) rotateY(${(ry + wobB).toFixed(2)}deg) rotateZ(${((Math.sin(t * 6.2) * Math.exp(-(lamX + 1.4) * t) * 6)).toFixed(2)}deg)`;
-
-      // Stability check: below thresholds for a CONTINUOUS window -> settled.
-      const calm =
-        h === 0 && linSpd < s * 0.18 && angVX < 55 && angVY < 55 && t > 0.45;
-      stableMs = calm ? stableMs + dt * 1000 : 0;
-      const settled = stableMs >= 130;
-
-      if (!settled && t < maxT) {
-        raf = requestAnimationFrame(frame);
-        return;
-      }
-
-      // Fully settled: exact face (analytic limit), no snap beyond <1° imperceptible.
-      finalized = true;
-      const fx = rx0 + sweepX;
-      const fy = ry0 + sweepY;
-      curRef.current = [fx, fy];
-      // Fully settled: zero tilt — exactly one face toward the player.
-      el.style.transform = `rotateX(${fx.toFixed(2)}deg) rotateY(${fy.toFixed(2)}deg)`;
-      if (sh) {
-        sh.style.opacity = "0.46";
-        sh.style.transform = "translate(-50%, 0) scale(1)";
-      }
-    };
-    raf = requestAnimationFrame(frame);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      if (!finalized) {
-        el.style.transform = `rotateX(${curRef.current[0].toFixed(2)}deg) rotateY(${curRef.current[1].toFixed(2)}deg)`;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spinKey]);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!interactive) return;
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      /* not critical */
-    }
-    const t = performance.now();
-    gestureRef.current = {
-      sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY, t0: t,
-      px: e.clientX, py: e.clientY, pt: t, vx: 0, vy: 0,
-    };
-    setPressed(true);
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const g = gestureRef.current;
-    if (!g) return;
-    g.cx = e.clientX;
-    g.cy = e.clientY;
-    const t = performance.now();
-    // Re-sample at ~40Hz so velocity reflects the real gesture speed.
-    if (t - g.pt >= 24) {
-      const dt = (t - g.pt) / 1000;
-      if (dt > 0.001) {
-        const vx = (g.cx - g.px) / dt;
-        const vy = (g.cy - g.py) / dt;
-        g.vx = Math.max(-4 * s, Math.min(4 * s, g.vx * 0.5 + vx * 0.5));
-        g.vy = Math.max(-4 * s, Math.min(4 * s, g.vy * 0.5 + vy * 0.5));
-      }
-      g.px = g.cx;
-      g.py = g.cy;
-      g.pt = t;
-    }
-  };
-  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    setPressed(false);
-    const g = gestureRef.current;
-    gestureRef.current = null;
-    if (!interactive || !g) return;
-    const dx = e.clientX - g.sx;
-    const dy = e.clientY - g.sy;
-    const dur = performance.now() - g.t0;
-    // Remember the complete gesture: total direction + tracked velocity.
-    swipeRef.current = { dx, dy, vx: g.vx, vy: g.vy };
-    // Tiny accidental touches / long holds do not throw.
-    if (Math.hypot(dx, dy) < 6 && dur > 700) return;
-    onRoll();
-  };
-  const onPointerCancel = () => {
-    setPressed(false);
-    gestureRef.current = null;
-  };
-
-  const idle = !dim && spinKey === 0 && face !== null;
-
-  return (
-    <div
-      className={cn(
-        "relative transition-transform duration-100",
-        !interactive && "pointer-events-none",
-        pressed && interactive && "scale-90"
-      )}
-      style={{ width: s, height: s, perspective: s * 2.8, touchAction: "none" }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerCancel}
-      role={interactive ? "button" : undefined}
-      aria-label="Roll the dice"
-    >
-      {/* soft moving ground shadow */}
-      <div
-        ref={shadowRef}
-        className="pointer-events-none absolute rounded-[50%]"
-        style={{
-          left: "50%",
-          top: "86%",
-          width: s * 0.96,
-          height: s * 0.22,
-          transform: "translate(-50%, 0)",
-          opacity: dim ? 0.2 : 0.42,
-          background: "radial-gradient(ellipse at center, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 70%)",
-          filter: "blur(2px)",
-        }}
-      />
-
-      {/* idle float wrapper (only when waiting, never during a roll) */}
-      <div
-        className={cn("absolute inset-0", idle && "die-float", dim && spinKey === 0 && "opacity-70")}
-        style={{ transition: "opacity .25s" }}
-      >
-        <div
-          ref={cubeRef}
-          className="absolute"
-          style={{
-            width: s,
-            height: s,
-            left: "50%",
-            top: "50%",
-            marginLeft: -s / 2,
-            marginTop: -s / 2,
-            transformStyle: "preserve-3d",
-            transform: `rotateX(${curRef.current[0]}deg) rotateY(${curRef.current[1]}deg)`,
-          }}
-        >
-          {faceNodes}
-          {face === null && (
-            <div
-              className="absolute flex items-center justify-center font-black"
-              style={{
-                inset: 0,
-                transform: `translateZ(${h}px)`,
-                borderRadius: Math.max(6, Math.round(s * 0.13)),
-                background: faceBg(col),
-                border: "1px solid rgba(0,0,0,0.32)",
-                boxShadow: `inset 0 -5px 9px ${shade(col, -38)}80`,
-                fontSize: s * 0.5,
-                color: "rgba(255,255,255,0.94)",
-                textShadow: "0 1px 2px rgba(0,0,0,0.35)",
-              }}
-            >
-              ?
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ------------------------------ board ------------------------------ */
 
 export function LudoBoard({
@@ -769,11 +358,29 @@ export function LudoBoard({
   const boardRef = React.useRef<HTMLDivElement>(null);
   const [visual, setVisual] = React.useState<VisualMap>({});
   const [fx, setFx] = React.useState<Record<string, "land" | "capture" | undefined>>({});
-  const [die, setDie] = React.useState<{ face: number | null; spinKey: number; target: number | null }>({
-    face: null,
-    spinKey: 0,
-    target: null,
-  });
+
+  // ------------------------------------------------------------------
+  // PHYSICAL DICE STATE
+  // The resting pose of the die is authoritative game state (state.dice).
+  // Locally it is mirrored in `dicePose` — it is ONLY ever updated by:
+  //  1. the authoritative snapshot (init / reconnect / external change)
+  //  2. the landing spot of MY physics roll
+  //  3. the target pose of a replayed remote/AI roll
+  // Turn changes NEVER touch it — the die stays where it landed.
+  // ------------------------------------------------------------------
+  const initialDice = React.useMemo(() => {
+    const d = (snapshot.state as Record<string, unknown>)?.dice;
+    return d && typeof d === "object" ? normalizeDicePose(d as Partial<LudoDicePose>) : DEFAULT_DICE_POSE;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [dicePose, setDicePose] = React.useState<LudoDicePose>(initialDice);
+  const physicsRef = React.useRef<PhysicsDiceHandle>(null);
+  const mySeatRef = React.useRef<number | null>(mySeatNumber);
+  mySeatRef.current = mySeatNumber;
+  /** The local roll I committed (value + pose) — matched against its echo. */
+  const ownCommitRef = React.useRef<{ die: number; pose: LudoDicePose } | null>(null);
+  /** True while the local physics simulation is airborne (before it settles). */
+  const simActiveRef = React.useRef(false);
 
   const queueRef = React.useRef<Array<Record<string, unknown>>>([]);
   const lastAppliedRef = React.useRef(0);
@@ -798,8 +405,6 @@ export function LudoBoard({
     return map;
   }, [seats]);
 
-  // Dice colour follows the player whose turn it is.
-  const turnSeatHex = seatByPn.get(game.currentTurn ?? -1)?.color ?? "#7c5cf6";
   const [fxWin, setFxWin] = React.useState(false);
   const [soundOn, setSoundOn] = React.useState(!isSoundMuted());
 
@@ -812,9 +417,8 @@ export function LudoBoard({
   const cellPx = boardW / GRID;
   const tokenPx = cellPx * 0.86;
   const homeTokenPx = cellPx * 0.74;
-  // Compact die (cube of equal height/width/length) — stays clear of cells.
-  // Dice lives in its own dock below the board — larger & touch friendly.
-  const dieSizePx = Math.min(Math.max(boardW * 0.2, 80), 126);
+  // On-board dice: sized relative to the board so it reads like a real die.
+  const dieSizePx = Math.max(48, Math.min(96, Math.round(boardW * 0.17)));
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
   const legalMoves = React.useMemo(() => {
@@ -834,7 +438,10 @@ export function LudoBoard({
     state.phase === "ROLL" &&
     !isActing &&
     !busyRef.current &&
-    !rollPendingRef.current;
+    !rollPendingRef.current &&
+    !simActiveRef.current;
+  const canRollRef = React.useRef(canRoll);
+  canRollRef.current = canRoll;
 
   // ---------- board measurement (responsive grid) ----------
   React.useEffect(() => {
@@ -913,14 +520,6 @@ export function LudoBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.status]);
 
-  // When reconnecting or coming back mid-game, show the authoritative die face.
-  React.useEffect(() => {
-    if (!busyRef.current && die.target === null && die.face === null && state.die != null) {
-      setDie((d) => ({ ...d, face: state.die as number }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.die, die.face, die.target]);
-
   // ---------- consume server-confirmed moves into the animation queue ----------
   const enqueueNewMoves = React.useCallback(() => {
     for (const m of snapshot.recentMoves) {
@@ -932,7 +531,13 @@ export function LudoBoard({
       enqueuedRef.current = Math.max(enqueuedRef.current, m.moveNumber);
       const md = (m.moveData ?? {}) as Record<string, unknown>;
       if (md.kind === "ludo-roll") {
-        queueRef.current.push({ kind: "roll", die: md.die, moveNumber: m.moveNumber });
+        queueRef.current.push({
+          kind: "roll",
+          die: md.die,
+          playerNumber: md.playerNumber,
+          dice: md.dice ?? null,
+          moveNumber: m.moveNumber,
+        });
       } else if (md.kind === "ludo-move") {
         queueRef.current.push({
           kind: "move",
@@ -958,11 +563,38 @@ export function LudoBoard({
         try {
           if (ev.kind === "roll") {
             const dieVal = Number(ev.die ?? 1);
-            setDie((d) => ({ face: d.face, spinKey: d.spinKey + 1, target: dieVal }));
-            sfx.roll();
-            await sleep(1290); // physics roll duration (1150-1310ms) + settle
-            setDie((d) => ({ face: dieVal, spinKey: d.spinKey, target: null }));
-            await sleep(90);
+            const raw = ev.dice as Partial<LudoDicePose> | null | undefined;
+            const target = raw
+              ? normalizeDicePose(raw)
+              : { ...DEFAULT_DICE_POSE, ...poseQuatForFace(dieVal) };
+
+            // My own physical roll echoes back from the server — the die is
+            // already resting exactly there, so skip the replay animation.
+            const own = ownCommitRef.current;
+            const isOwnEcho =
+              own !== null &&
+              own.die === dieVal &&
+              posesEqual(own.pose, target) &&
+              Number(ev.playerNumber ?? -1) === mySeatRef.current;
+            if (isOwnEcho) {
+              ownCommitRef.current = null;
+              setDicePose(target);
+              sfx.land();
+              await sleep(60);
+            } else {
+              // Remote / AI roll: tumble to the SAME server-confirmed pose.
+              sfx.roll();
+              const pd = physicsRef.current;
+              if (pd) {
+                await pd.replayTo(target);
+                if (!mountedRef.current) return;
+              } else {
+                await sleep(900);
+              }
+              setDicePose(target);
+              sfx.land();
+              await sleep(80);
+            }
           } else if (ev.kind === "move") {
             const pn = Number(ev.playerNumber);
             const token = Number(ev.token);
@@ -1038,18 +670,37 @@ export function LudoBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot.recentMoves]);
 
-  // ---------- interactions ----------
-  const doRoll = React.useCallback(async () => {
-    if (!canRoll || busyRef.current || rollPendingRef.current) return;
-    rollPendingRef.current = true;
-    try {
-      await act({ action: "roll" });
-      // server confirms; the roll event drives the dice animation
-    } catch {
-      rollPendingRef.current = false;
-    }
-    // release happens in pump() once the confirm event has been animated
-  }, [act, canRoll]);
+  // ---------- dice interactions (swipe-to-roll, physical) ----------
+  // A swipe on the die drives the real cannon-es simulation; when the cube
+  // settles, its physical top face IS the roll value and the resting pose is
+  // committed to the server with that value.
+  const onLocalRollStart = React.useCallback(() => {
+    simActiveRef.current = true;
+    sfx.roll();
+  }, []);
+
+  const onLocalSettled = React.useCallback(
+    (pose: LudoDicePose, value: number) => {
+      simActiveRef.current = false;
+      if (rollPendingRef.current || busyRef.current) return;
+      rollPendingRef.current = true;
+      ownCommitRef.current = { die: value, pose };
+      setDicePose(pose);
+      act({ action: "roll", die: value, dice: pose }).catch(() => {
+        // Server rejected / network failed: un-lock so the player can re-roll.
+        rollPendingRef.current = false;
+        ownCommitRef.current = null;
+      });
+      // Safety: if the echo never arrives (e.g. disconnected), release the lock.
+      window.setTimeout(() => {
+        if (ownCommitRef.current) {
+          ownCommitRef.current = null;
+          rollPendingRef.current = false;
+        }
+      }, 6000);
+    },
+    [act]
+  );
 
   const doMoveToken = React.useCallback(
     (pn: number, idx: number) => {
@@ -1118,6 +769,9 @@ export function LudoBoard({
               transform: `translate3d(${x - tpx / 2}px, ${y - tpx / 2}px, 0)`,
               transition: glide ? "transform 150ms cubic-bezier(.25,.6,.3,1)" : "none",
               willChange: "transform",
+              // Non-selectable tokens never swallow pointer events, so the
+              // physical die (which lives on the board) can always be swiped.
+              pointerEvents: legal ? "auto" : "none",
               // Physical glossy token: strong specular dome, body gradient,
               // dark lower band for thickness, rim light, dark edge ring and a
               // soft contact shadow so it sits on the board like a real piece.
@@ -1148,14 +802,14 @@ export function LudoBoard({
     }
   }
 
-  const statusOver = ["FINISHED", "DRAW", "CANCELLED"].includes(game.status);
-  const showDie = !statusOver && !!seatByPn.size;
   const hint = !isMyTurn
     ? activePn !== null
       ? `${seatByPn.get(activePn)?.name ?? "Player"} is thinking…`
       : ""
     : state.phase === "ROLL"
-      ? "Tap or swipe the dice to roll"
+      ? canRoll
+        ? "Swipe the dice to roll"
+        : "Rolling…"
       : legalTokens.size > 0
         ? "Tap a glowing token to move it"
         : "Rolling…";
@@ -1179,49 +833,32 @@ export function LudoBoard({
       >
         <div
           className="absolute inset-0 rounded-2xl"
-            style={{
-              background: WOOD,
-              boxShadow:
-                "inset 0 0 0 4px rgba(60,38,18,0.55), inset 0 0 60px rgba(0,0,0,0.28), 0 18px 40px -12px rgba(0,0,0,0.7), 0 0 46px 2px rgba(124,58,237,0.55)",
-            }}
-          />
+          style={{
+            background: WOOD,
+            boxShadow:
+              "inset 0 0 0 4px rgba(60,38,18,0.55), inset 0 0 60px rgba(0,0,0,0.28), 0 18px 40px -12px rgba(0,0,0,0.7), 0 0 46px 2px rgba(124,58,237,0.55)",
+          }}
+        />
 
         <StaticLayers seats={seatByPn} activePn={activePn} homeRelCells={homeRelCells} />
 
         {tokenEls}
 
+        {/* PHYSICAL DICE — inside the board. Its pose is part of the game
+            state; it rests where it lands and is never teleported. */}
+        {boardW > 10 && (
+          <LudoPhysicalDice
+            ref={physicsRef}
+            boardPx={boardW}
+            sizePx={dieSizePx}
+            pose={dicePose}
+            canRoll={canRoll}
+            glow={canRoll}
+            onRollStart={onLocalRollStart}
+            onSettled={onLocalSettled}
+          />
+        )}
       </div>
-
-      {/* dice dock — separate interactive dice near the player controls */}
-      {showDie && (
-        <div className="flex justify-center px-1">
-          <div
-            className={cn(
-              "relative flex flex-col items-center rounded-2xl border border-white/10 px-5 py-3 backdrop-blur-md",
-              "bg-white/[0.045]",
-              canRoll && "die-pulse"
-            )}
-            style={{
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 10px 26px -12px rgba(0,0,0,0.7)",
-            }}
-          >
-            <DiceCube
-              sizePx={dieSizePx}
-              travelHalf={dieSizePx * 0.9}
-              color={turnSeatHex}
-              face={die.face}
-              spinKey={die.spinKey}
-              target={die.target}
-              interactive={canRoll}
-              dim={!canRoll && die.target === null}
-              onRoll={() => void doRoll()}
-            />
-            <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.24em] text-slate-500">
-              {die.target !== null ? "Rolling…" : canRoll ? "Tap or swipe to roll" : "Waiting"}
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* status row */}
       <div className="flex items-center justify-center gap-2 px-1">
@@ -1271,16 +908,6 @@ export function LudoBoard({
         {hint}
       </p>
       <style>{`
-        @keyframes diePulse {
-          0%, 100% { filter: drop-shadow(0 0 2px rgba(255,255,255,0)); }
-          50% { filter: drop-shadow(0 0 14px rgba(139,92,246,0.85)); }
-        }
-        .die-pulse { animation: diePulse 1.6s ease-in-out infinite; }
-        @keyframes dieFloat {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-3px); }
-        }
-        .die-float { animation: dieFloat 2.6s ease-in-out infinite; }
         @keyframes fxLand {
           0% { transform: scale(1); }
           40% { transform: scale(1.9); }

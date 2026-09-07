@@ -10,6 +10,7 @@ import { createLudoState, rollLudo, moveLudoToken, legalLudoMoves } from "@/lib/
 import type { ChessState } from "@/lib/games/chess/engine";
 import { createChessState, stepChess, chessTurnSeat } from "@/lib/games/chess/engine";
 import { finishGame } from "@/lib/server/finish";
+import { randomDicePose } from "@/lib/games/ludo/dice";
 
 /**
  * Drives AI opponents inside an AI-mode game.
@@ -70,8 +71,17 @@ async function playAiUnit(tx: Prisma.TransactionClient, gameId: string): Promise
     let outcome;
     if (s.phase === "ROLL") {
       const die = randomInt(1, 7);
+      // Physical dice: give the AI roll an authoritative resting pose (whose
+      // visible face matches the roll) so observers replay onto the same spot.
+      s.dice = randomDicePose(die);
       const res = rollLudo(s, die);
-      await recordMove(tx, gameId, seat.id, { kind: "ludo-roll", die, playerNumber: seat.playerNumber, autoPassed: res.autoPassed });
+      await recordMove(tx, gameId, seat.id, {
+        kind: "ludo-roll",
+        die,
+        playerNumber: seat.playerNumber,
+        autoPassed: res.autoPassed,
+        dice: s.dice ?? null,
+      });
     } else {
       const legal = legalMovesOf(s, seat.playerNumber);
       const choice = chooseLudoMove(s, seat.playerNumber, legal, difficulty);

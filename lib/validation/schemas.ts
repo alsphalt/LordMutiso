@@ -66,10 +66,30 @@ export const joinRoomSchema = z.object({
     .transform((s) => s.toUpperCase().replace(/[^A-Z0-9]/g, "")),
 });
 
+export const dicePoseSchema = z
+  .object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    rotX: z.number().min(-1080).max(1080).optional(),
+    rotY: z.number().min(-1080).max(1080).optional(),
+    rotZ: z.number().min(-1080).max(1080).optional(),
+    qx: z.number().min(-1.0001).max(1.0001).optional(),
+    qy: z.number().min(-1.0001).max(1.0001).optional(),
+    qz: z.number().min(-1.0001).max(1.0001).optional(),
+    qw: z.number().min(-1.0001).max(1.0001).optional(),
+  })
+  .optional()
+  .nullable();
+
 export const gameActionSchema = z.object({
   action: z.enum(["start", "roll", "move", "resign", "rematch", "leave"]),
   // Ludo "move"
   token: z.number().int().min(0).max(7).optional(),
+  // Ludo "roll": the die value comes from the physical cube's top face.
+  // Absent (e.g. idle auto-roll) -> the server rolls instead.
+  die: z.number().int().min(1).max(6).optional(),
+  // Ludo "roll": where the physical die came to rest (board fractions + quat).
+  dice: dicePoseSchema,
   // Chess / Checkers "move"
   from: z.number().int().min(0).max(63).optional(),
   to: z.number().int().min(0).max(63).optional(),

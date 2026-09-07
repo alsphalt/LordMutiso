@@ -5,6 +5,7 @@ import { gameActionSchema } from "@/lib/validation/schemas";
 import { buildGameSnapshot } from "@/lib/games/snapshot";
 import { randomInt } from "@/lib/utils";
 import { notifyAll } from "@/lib/notifications";
+import { normalizeDicePose, randomDicePose } from "@/lib/games/ludo/dice";
 import { finishGame } from "@/lib/server/finish";
 import { leaveRoom } from "@/lib/server/rooms";
 
@@ -96,8 +97,16 @@ export const POST = handle(async (req, { params }) => {
       if (game.status !== "PLAYING") throw badRequest("Game not playing");
       if (game.currentTurn !== mySeat?.playerNumber) throw forbidden("Not your turn");
 
-      const die = randomInt(1, 7);
+      // The die value is determined by the physical cube on the rolling
+      // client (top face of the settled die). When absent (idle auto-roll,
+      // older clients) the server rolls a fair die instead.
+      const die = input.die ?? randomInt(1, 7);
       const { autoPassed } = rollLudo(state, die);
+
+      // The dice is a persistent physical object: store where it came to
+      // rest so every player renders the same pose across turns/reconnects.
+      if (input.dice) state.dice = normalizeDicePose(input.dice);
+      else if (!state.dice) state.dice = randomDicePose(die);
 
       let nextTurn = state.turn;
       
@@ -109,7 +118,13 @@ export const POST = handle(async (req, { params }) => {
         },
       });
 
-      await recordMove(tx, game.id, mySeat!.id, { kind: "ludo-roll", die, autoPassed });
+      await recordMove(tx, game.id, mySeat!.id, {
+        kind: "ludo-roll",
+        die,
+        autoPassed,
+        playerNumber: mySeat!.playerNumber,
+        dice: state.dice ?? null,
+      });
 
     } else if (input.action === "move") {
       if (game.status !== "PLAYING") throw badRequest("Game not playing");

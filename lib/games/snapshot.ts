@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { notFound, forbidden } from "@/lib/api";
-import type { GameSnapshot, MoveDTO } from "@/lib/games/types";
+import type { GameSnapshot, MoveDTO, GameStatusName } from "@/lib/games/types";
 
 /**
  * Build the client-facing snapshot of a game for `viewerId`.
@@ -66,7 +66,8 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
       type: game.type,
       gameMode: game.gameMode,
       aiDifficulty: game.aiDifficulty,
-      status: game.status,
+      // Game.status never holds the room-only COMPLETED/CLOSED values.
+      status: game.status as GameStatusName,
       createdBy: game.createdBy,
       winnerId: game.winnerId,
       winnerPlayerNumber: game.winnerPlayerNumber,

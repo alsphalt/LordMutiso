@@ -15,7 +15,7 @@
     "db:validate": "prisma validate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "test": "node --import tsx --test tests/engines.test.ts tests/lib.test.ts tests/ai.test.ts tests/db.test.ts"
+    "test": "node --import tsx --test tests/engines.test.ts tests/lib.test.ts tests/ai.test.ts tests/db.test.ts tests/dice.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -23,6 +23,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
+    "cannon-es": "^0.20.0",
     "chess.js": "^1.0.0-beta.8",
     "lucide-react": "^0.453.0",
     "next": "^14.2.15",

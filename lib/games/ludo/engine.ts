@@ -1,3 +1,5 @@
+import type { LudoDicePose } from "./dice";
+
 /**
  * Ludo engine — pure, serializable, server-authoritative.
  *
@@ -45,6 +47,14 @@ export interface LudoState {
   consecutiveSixes: number;
   rolls: number; // total dice rolls for stats
   moves: number; // total token moves for stats
+  /**
+   * Physical dice pose ON the board (x/y board fractions + rotation).
+   * The die is a persistent physical object: it stays wherever the last roll
+   * left it — turn changes NEVER reset it. `undefined` = no roll yet (UI
+   * starts it at the board centre). Engine rules never read it; it rides
+   * along in the persisted state for multiplayer synchronisation.
+   */
+  dice?: LudoDicePose | null;
 }
 
 export interface LudoResult {
