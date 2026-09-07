@@ -114,6 +114,7 @@ function DashboardView({ user, setOpenFor }: { user: any, setOpenFor: (type: Gam
   const router = useRouter();
   const { data: onlineData } = useApiPoll<{ count: number; users: any[] }>("/api/online", 15000);
   const { data: myGamesData } = useApiPoll<{ games: any[] }>("/api/games/mine", 5000);
+  const { data: roomsData } = useApiPoll<{ rooms: any[]; activeCount: number }>("/api/rooms", 6000);
   const { data: leaderboardData } = useApiPoll<{ rows: any[] }>("/api/leaderboard?game=OVERALL&limit=5", 30000);
 
   return (

@@ -26,6 +26,9 @@ enum GameStatus {
   FINISHED
   DRAW
   CANCELLED
+  // Room-lifecycle states (GameRoom.status only — never used on Game.status)
+  COMPLETED // game that used this room has finished
+  CLOSED // room expired / abandoned
 }
 
 enum GameMode {
@@ -210,7 +213,14 @@ model GameMove {
 
 model GameRoom {
   id         String     @id @default(cuid())
-  roomCode   String     @unique // short join code, e.g. "K7P2QD"
+  // Quick-match rooms have NO code (null). Private rooms carry a unique code.
+  roomCode   String?    @unique
+  // Human friendly room name — required for quick-match rooms, optional for private.
+  roomName   String?
+  // One-time-use guard for private room codes: set true once a player joins by code.
+  codeUsed   Boolean    @default(false)
+  // WAITING rooms expire after 24h (quick-match lobby discovery window).
+  expiresAt  DateTime?
   gameId     String     @unique
   game       Game       @relation(fields: [gameId], references: [id], onDelete: Cascade)
   maxPlayers Int
@@ -219,6 +229,7 @@ model GameRoom {
   updatedAt  DateTime   @updatedAt
 
   @@index([status])
+  @@index([expiresAt])
 }
 
 // ---------- Chat ----------

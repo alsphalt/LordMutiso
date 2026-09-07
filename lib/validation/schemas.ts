@@ -48,6 +48,13 @@ export const chatMessageSchema = z
 
 export const createRoomSchema = z.object({
   type: z.enum(["LUDO", "CHESS", "CHECKERS"]),
+  mode: z.enum(["QUICK", "PRIVATE"]).optional(), // legacy clients omit mode -> PRIVATE (code room)
+  name: z
+    .string()
+    .trim()
+    .min(1, "Enter a room name")
+    .max(40, "Room name must be 40 characters or fewer")
+    .optional(),
 });
 
 export const joinRoomSchema = z.object({

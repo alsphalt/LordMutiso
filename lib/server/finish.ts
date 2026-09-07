@@ -32,6 +32,14 @@ export async function finishGame(
   });
   if (transitioned.count === 0) return false;
 
+  // A finished game can never leave its room in a discoverable/active state.
+  // Flip the room to COMPLETED so active lists, counts and "your matches"
+  // (which require room status WAITING/PLAYING) all exclude it.
+  await tx.gameRoom.updateMany({
+    where: { gameId, status: { in: ["WAITING", "PLAYING"] } },
+    data: { status: "COMPLETED" },
+  });
+
   const game = await tx.game.findUnique({
     where: { id: gameId },
     include: { players: true },

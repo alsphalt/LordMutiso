@@ -52,6 +52,7 @@ export interface GameDTO {
   winnerPlayerNumber: number | null;
   currentTurn: number | null;
   roomCode: string | null;
+  roomName: string | null;
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;

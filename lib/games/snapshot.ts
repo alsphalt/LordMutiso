@@ -16,7 +16,7 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
         orderBy: { playerNumber: "asc" },
         include: { user: { select: { id: true, username: true, image: true } } },
       },
-      room: { select: { roomCode: true, maxPlayers: true } },
+      room: { select: { roomCode: true, maxPlayers: true, roomName: true } },
       creator: { select: { id: true } },
     },
   });
@@ -72,6 +72,7 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
       winnerPlayerNumber: game.winnerPlayerNumber,
       currentTurn: game.currentTurn,
       roomCode: game.room?.roomCode ?? null,
+      roomName: game.room?.roomName ?? null,
       createdAt: game.createdAt.toISOString(),
       startedAt: game.startedAt?.toISOString() ?? null,
       endedAt: game.endedAt?.toISOString() ?? null,
