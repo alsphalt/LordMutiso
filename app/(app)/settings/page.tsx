@@ -1,23 +1,23 @@
 "use client";
 
 import * as React from "react";
-import { Settings as SettingsIcon, Save, Shield, User as UserIcon, Camera, Lock } from "lucide-react";
+import { Settings as SettingsIcon, Save, Shield, User as UserIcon, Lock } from "lucide-react";
 import { api } from "@/hooks/api";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Avatar } from "@/components/ui/avatar";
+import { PicturePicker } from "@/components/profile/picture-picker";
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
   const { push } = useToast();
   const [loading, setLoading] = React.useState(false);
-  
+  const [avatarSrc, setAvatarSrc] = React.useState<string | null>(null);
+
   const [profile, setProfile] = React.useState({
     username: "",
-    image: "",
   });
 
   const [password, setPassword] = React.useState({
@@ -28,10 +28,8 @@ export default function SettingsPage() {
 
   React.useEffect(() => {
     if (user) {
-      setProfile({
-        username: user.username,
-        image: user.image || "",
-      });
+      setProfile({ username: user.username });
+      setAvatarSrc(user.image || null);
     }
   }, [user]);
 
@@ -41,7 +39,7 @@ export default function SettingsPage() {
     try {
       await api("/api/profile", {
         method: "PATCH",
-        body: JSON.stringify(profile),
+        body: JSON.stringify({ username: profile.username }),
       });
       await refresh();
       push({ title: "Profile Updated", message: "Your changes have been saved", tone: "success" });
@@ -87,13 +85,16 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
         <div className="md:col-span-1 space-y-4">
           <Card className="p-6 flex flex-col items-center text-center">
-            <div className="relative group">
-              <Avatar username={profile.username || "user"} src={profile.image} size={120} />
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity rounded-full flex items-center justify-center cursor-pointer">
-                <Camera className="text-white" size={24} />
-              </div>
-            </div>
-            <h3 className="mt-4 font-bold text-white text-lg">{user?.username}</h3>
+            <PicturePicker
+              username={profile.username || user?.username || "user"}
+              src={avatarSrc}
+              size={120}
+              onChanged={(image) => {
+                setAvatarSrc(image);
+                void refresh();
+              }}
+            />
+            <h3 className="mt-2 font-bold text-white text-lg">{user?.username}</h3>
             <p className="text-xs text-slate-500 uppercase font-black tracking-widest mt-1">Arena Combatant</p>
           </Card>
         </div>
@@ -113,15 +114,6 @@ export default function SettingsPage() {
                   placeholder="Username"
                   disabled={loading}
                   required
-                />
-              </Field>
-              
-              <Field label="Avatar URL" hint="Direct link to a public image (JPG, PNG, SVG)">
-                <Input 
-                  value={profile.image}
-                  onChange={(e) => setProfile({ ...profile, image: e.target.value })}
-                  placeholder="https://example.com/avatar.png"
-                  disabled={loading}
                 />
               </Field>
 

@@ -74,3 +74,7 @@ export const STATUS_LABEL: Record<string, string> = {
 export function avatarFor(username: string): string {
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(username)}&backgroundColor=8b5cf6,22d3ee,6d28d9,0e7490`;
 }
+
+/** Internal avatar upload limits (client compresses before sending). */
+export const AVATAR_MAX_DIM = 512; // square px the client renders the final crop at
+export const AVATAR_MAX_BYTES = 600_000; // decoded byte cap enforced server-side

@@ -1,24 +1,18 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
-import { type GameSnapshot, COLOR_HEX } from "@/lib/games/types";
+import { useState, useMemo, useEffect, useSyncExternalStore } from "react";
+import { type GameSnapshot } from "@/lib/games/types";
 import { Chess, type Square } from "chess.js";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { getChessView, setChessView, subscribeChessView, type ChessView } from "./chess-view-store";
 
 interface ChessBoardProps {
   snapshot: GameSnapshot;
   act: (body: any) => Promise<any>;
   isActing: boolean;
 }
-
-type BoardStyle = "3D" | "2D";
-
-const VIEW_OPTIONS = [
-  { value: "3D", mark: "◈", label: "3D Board" },
-  { value: "2D", mark: "▦", label: "2D Board" },
-] as const;
 
 const PIECES: Record<string, string> = {
   wP: "♙", wR: "♖", wN: "♘", wB: "♗", wQ: "♕", wK: "♔",
@@ -115,30 +109,14 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
   const state = snapshot.state as any;
   const [selected, setSelected] = useState<number | null>(null);
   const [promotionMove, setPromotionMove] = useState<{ from: number; to: number } | null>(null);
-  const [boardStyle, setBoardStyle] = useState<BoardStyle>("3D");
-  const [hydrated, setHydrated] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // SSR-safe localStorage persistence for the chosen board view.
+  // Board view (3D/2D) — owned by the shared store so the header gear and the
+  // board always agree. The mount effect hydrates the saved preference (SSR
+  // renders the default 3D board, then it snaps to the user's saved choice).
+  const boardStyle = useSyncExternalStore<ChessView>(subscribeChessView, getChessView, () => "3D");
   useEffect(() => {
-    let saved: string | null = null;
-    try {
-      saved = window.localStorage.getItem("dna_chess_view");
-    } catch {
-      saved = null;
-    }
-    if (saved === "2D" || saved === "3D") setBoardStyle(saved);
-    setHydrated(true);
+    setChessView(getChessView());
   }, []);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem("dna_chess_view", boardStyle);
-    } catch {
-      /* ignore storage errors */
-    }
-  }, [hydrated, boardStyle]);
 
   const chess = useMemo(() => new Chess(state.fen), [state.fen]);
   const isBlack = mySeatNumber === 2;
@@ -493,54 +471,6 @@ export function ChessBoard({ snapshot, act, isActing }: ChessBoardProps) {
           )}
         </div>
 
-        {/* ⚙ settings button — top-right of the board */}
-        <button
-          type="button"
-          aria-label="Board style settings"
-          onClick={() => setSettingsOpen(v => !v)}
-          className="absolute top-1.5 right-1.5 z-30 grid h-8 w-8 place-items-center rounded-full border border-white/15 bg-black/45 text-base text-slate-100 shadow-[0_0_14px_rgba(139,92,246,0.35)] backdrop-blur-md select-none transition-transform active:scale-90 hover:bg-black/60"
-        >
-          ⚙
-        </button>
-
-        {/* settings backdrop + compact modal */}
-        {settingsOpen && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setSettingsOpen(false)} />
-            <div className="absolute right-1.5 top-10 z-40 w-48 origin-top-right animate-in fade-in zoom-in duration-150 rounded-xl border border-white/15 bg-[#150b2b]/95 p-1.5 shadow-[0_10px_40px_rgba(0,0,0,0.6),0_0_24px_rgba(139,92,246,0.25)] backdrop-blur-xl">
-              <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                Board Style
-              </p>
-              {VIEW_OPTIONS.map(opt => {
-                const active = boardStyle === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => {
-                      setBoardStyle(opt.value);
-                      setSettingsOpen(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                      active ? "bg-violet-500/20 text-white" : "text-slate-300 hover:bg-white/10 hover:text-white"
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className={cn("text-base leading-none", active ? "text-violet-300" : "text-slate-500")}>
-                        {opt.mark}
-                      </span>
-                      {opt.label}
-                    </span>
-                    <span className={cn("text-sm font-bold leading-none", active ? "text-emerald-300" : "text-slate-500")}>
-                      {active ? "✓" : "○"}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
       </div>
 
       <Modal

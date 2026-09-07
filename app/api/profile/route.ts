@@ -20,7 +20,13 @@ export const PATCH = handle(async (req) => {
   }
 
   if (data.image !== undefined) {
-    updates.image = data.image || null;
+    const nextImage = (data.image || "").trim();
+    updates.image = nextImage || null;
+    // If the picture is cleared or replaced with an external URL, the stored
+    // avatar row is no longer referenced — drop it to keep the DB tidy.
+    if (!nextImage.startsWith("/api/avatar/")) {
+      await prisma.userAvatar.deleteMany({ where: { userId: user.id } });
+    }
   }
 
   if (data.newPassword) {

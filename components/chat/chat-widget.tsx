@@ -20,7 +20,7 @@ interface ChatMsg {
   createdAt: string;
 }
 
-export function ChatWidget({ gameId = null, compact, className, maxHeight = "500px" }: { gameId?: string | null; compact?: boolean; className?: string; maxHeight?: string }) {
+export function ChatWidget({ gameId = null, compact, className, maxHeight = "500px", hideComposer = false }: { gameId?: string | null; compact?: boolean; className?: string; maxHeight?: string; hideComposer?: boolean }) {
   const { user } = useAuth();
   const { push } = useToast();
   const [msg, setMsg] = React.useState("");
@@ -39,6 +39,18 @@ export function ChatWidget({ gameId = null, compact, className, maxHeight = "500
     if (!data) return [];
     return [...data.messages].reverse();
   }, [data]);
+
+  // When a composer elsewhere on the screen (e.g. the chess match dock) posts a
+  // message to this same chat, refresh immediately so it shows up without
+  // waiting for the next poll tick.
+  React.useEffect(() => {
+    const onExternalSend = (e: Event) => {
+      const detail = (e as CustomEvent<{ path?: string }>).detail;
+      if (detail?.path === path) refresh();
+    };
+    window.addEventListener("dna:chat-refresh", onExternalSend);
+    return () => window.removeEventListener("dna:chat-refresh", onExternalSend);
+  }, [path, refresh]);
 
   const scrollToBottom = React.useCallback(() => {
     if (scrollRef.current && isAutoScroll) {
@@ -153,6 +165,7 @@ export function ChatWidget({ gameId = null, compact, className, maxHeight = "500
         })}
       </div>
 
+      {!hideComposer && (
       <div className="p-4 pt-2 shrink-0 border-t border-white/10 bg-black/20">
         <div className="flex gap-1 mb-2">
           {emojis.map((e) => (
@@ -178,6 +191,7 @@ export function ChatWidget({ gameId = null, compact, className, maxHeight = "500
           </Button>
         </form>
       </div>
+      )}
     </div>
   );
 }

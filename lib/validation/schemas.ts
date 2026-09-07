@@ -28,8 +28,20 @@ export const loginSchema = z.object({
 export const profileSchema = z
   .object({
     username: usernameSchema.optional(),
+    // Empty string clears the picture; otherwise either a relative internal
+    // path (uploaded avatar: /api/avatar/...) or an absolute http(s) URL.
     image: z
-      .union([z.literal(""), z.string().url("Profile picture must be a valid URL").max(500)])
+      .union([
+        z.literal(""),
+        z
+          .string()
+          .trim()
+          .max(500)
+          .refine(
+            (v) => v.startsWith("/") || /^https?:\/\//i.test(v),
+            "Profile picture must be a valid URL or uploaded image"
+          ),
+      ])
       .optional(),
     currentPassword: z.string().max(72).optional(),
     newPassword: passwordSchema.optional(),

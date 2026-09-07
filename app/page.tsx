@@ -178,7 +178,7 @@ function DashboardView({ user, setOpenFor }: { user: any, setOpenFor: (type: Gam
                           {game.gameMode === 'AI' && <Badge tone="cyan">🤖 AI</Badge>}
                         </div>
                         <p className="text-xs text-slate-500 mt-1 uppercase font-bold tracking-tighter">
-                          vs {game.seats.filter((s: string) => s !== user.username).join(', ') || 'Waiting...'}
+                          vs {((game.seats || []).filter((s: any) => s?.username !== user?.username).map((s: any) => s?.username).join(', ')) || 'Waiting...'}
                         </p>
                       </div>
                     </div>

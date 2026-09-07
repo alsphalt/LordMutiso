@@ -86,6 +86,7 @@ model User {
   lastSeen     DateTime @default(now())
 
   statistics    UserStatistics?
+  avatar        UserAvatar?
   sessions      Session[]
   createdGames  Game[]          @relation("GameCreator")
   wonGames      Game[]          @relation("GameWinner")
@@ -138,6 +139,21 @@ model UserStatistics {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---------- Profile avatars (uploaded, DB-backed; no external storage) ----------
+
+model UserAvatar {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Compressed image bytes (client-side resized to <=512px; validated server-side).
+  data      Bytes
+  mime      String   @default("image/webp")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@index([updatedAt])
 }
 
 // ---------- Games ----------
