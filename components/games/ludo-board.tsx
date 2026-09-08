@@ -421,6 +421,16 @@ export function LudoBoard({
   const dieSizePx = Math.max(48, Math.min(96, Math.round(boardW * 0.17)));
 
   const activePn = game.status === "PLAYING" ? (state.turn ?? null) : null;
+  // The die tints to the seat whose turn it is (winner after the game ends).
+  const diceOwnerPn =
+    game.status === "PLAYING"
+      ? (state.turn ?? null)
+      : game.status === "FINISHED"
+        ? game.winnerPlayerNumber
+        : null;
+  const diceColor =
+    (diceOwnerPn !== null && diceOwnerPn !== undefined ? seatByPn.get(diceOwnerPn) : undefined)?.color ??
+    (seatByPn.size > 0 ? [...seatByPn.values()][0].color : "#e11d3c");
   const legalMoves = React.useMemo(() => {
     if (!isMyTurn || game.status !== "PLAYING") return [];
     try {
@@ -852,6 +862,7 @@ export function LudoBoard({
             boardPx={boardW}
             sizePx={dieSizePx}
             pose={dicePose}
+            color={diceColor}
             canRoll={canRoll}
             glow={canRoll}
             onRollStart={onLocalRollStart}
