@@ -2,11 +2,13 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { badRequest } from "@/lib/api";
 import { ludoSeatAssignment, seatAssignment, ludoColorsFor } from "@/lib/games/types";
-import type { ColorName, GameTypeName } from "@/lib/games/types";
+import type { ColorName } from "@/lib/games/types";
 import { initialEngineState } from "@/lib/server/ai-run";
 
+type AiSupportedGameType = "LUDO" | "CHESS" | "CHECKERS";
+
 export interface AiCreateInput {
-  type: GameTypeName;
+  type: AiSupportedGameType;
   aiCount: number; // LUDO only: 1..3
   difficulty: "EASY" | "MEDIUM" | "HARD";
   color: ColorName; // human color choice

@@ -23,7 +23,7 @@ export const COLOR_LABEL: Record<ColorName, string> = {
   BLACK: "Black",
 };
 
-export type GameTypeName = "LUDO" | "CHESS" | "CHECKERS";
+export type GameTypeName = "LUDO" | "CHESS" | "CHECKERS" | "TICTACTOE" | "WALLRUSH";
 export type GameStatusName = "WAITING" | "PLAYING" | "FINISHED" | "DRAW" | "CANCELLED";
 
 export interface GamePlayerDTO {
