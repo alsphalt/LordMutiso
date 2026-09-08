@@ -12,6 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
 import { cn, fmtDate, winRatePercent, timeAgo, fmtDurationMs } from "@/lib/utils";
 import { STATUS_LABEL } from "@/lib/constants";
+import { flagEmoji, countryName } from "@/lib/countries";
 import Link from "next/link";
 
 interface ProfileData {
@@ -19,6 +20,7 @@ interface ProfileData {
     id: string;
     username: string;
     image: string | null;
+    country?: string | null;
     createdAt: string;
   };
   stats: {
@@ -93,6 +95,11 @@ export default function ProfilePage() {
           <div className="text-center md:text-left space-y-4 flex-1">
             <div>
               <div className="flex flex-col md:flex-row md:items-center gap-3">
+                {user.country && (
+                  <span className="text-3xl leading-none drop-shadow-[0_0_10px_rgba(255,255,255,0.25)]" title={countryName(user.country) || undefined}>
+                    {flagEmoji(user.country)}
+                  </span>
+                )}
                 <h1 className="text-4xl md:text-5xl font-black italic tracking-tighter text-white uppercase leading-none">
                   {user.username}
                 </h1>

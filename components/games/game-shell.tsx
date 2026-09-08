@@ -50,6 +50,21 @@ export function GameShell({ gameId }: GameShellProps) {
   const { snapshot, error, loading, act, refresh, isActing } = useGame(gameId);
   const { push: toast } = useToast();
 
+  /**
+   * Rematch = a COMPLETELY NEW game session (the server creates a new Game
+   * record). Follow the new session id so the URL/polling never points at the
+   * finished one — no resumable game is left behind.
+   */
+  const handleRematch = useCallback(async () => {
+    try {
+      const res = await act({ action: "rematch" });
+      const nextId = (res as any)?.newGameId;
+      if (nextId && nextId !== gameId) router.replace(`/play/${nextId}`);
+    } catch {
+      // Stay on the result screen; the user can still pick another game.
+    }
+  }, [act, gameId, router]);
+
   // Header settings (gear) + match menu (⋮) + bottom chat dock — chess screens.
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -388,7 +403,7 @@ export function GameShell({ gameId }: GameShellProps) {
                   variant="success"
                   size="sm"
                   className="h-9 rounded-xl px-3 text-xs shadow-[0_0_16px_rgba(34,197,94,0.25)]"
-                  onClick={() => act({ action: "rematch" })}
+                  onClick={() => void handleRematch()}
                   loading={isActing}
                 >
                   <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
@@ -574,7 +589,7 @@ export function GameShell({ gameId }: GameShellProps) {
                     <Button
                       variant="primary"
                       className="w-full h-12 italic font-black"
-                      onClick={() => act({ action: "rematch" })}
+                      onClick={() => void handleRematch()}
                       loading={isActing}
                     >
                       <RotateCcw className="w-4 h-4 mr-2" />
@@ -584,8 +599,8 @@ export function GameShell({ gameId }: GameShellProps) {
                       <Button variant="outline" className="text-xs font-bold" onClick={() => router.push('/lobby')}>
                         Choose Another
                       </Button>
-                      <Button variant="ghost" className="text-xs font-bold" onClick={() => router.push('/')}>
-                        Dashboard
+                      <Button variant="ghost" className="text-xs font-bold" onClick={() => router.push('/lobby')}>
+                        Return to Arena
                       </Button>
                     </div>
                   </div>
@@ -615,13 +630,13 @@ export function GameShell({ gameId }: GameShellProps) {
 
                   <div className="grid grid-cols-2 gap-3 pt-4">
                     <Button variant="outline" className="w-full" asChild>
-                      <Link href="/lobby">Lobby</Link>
+                      <Link href="/lobby">Return to Arena</Link>
                     </Button>
                     {isPlayer && (
                       <Button
                         variant="primary"
                         className="w-full"
-                        onClick={() => act({ action: "rematch" })}
+                        onClick={() => void handleRematch()}
                         loading={isActing}
                       >
                         <RotateCcw className="w-4 h-4 mr-2" />
@@ -721,7 +736,7 @@ export function GameShell({ gameId }: GameShellProps) {
                         type="button"
                         onClick={() => {
                           setMenuOpen(false);
-                          act({ action: "rematch" });
+                          void handleRematch();
                         }}
                         className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs font-semibold text-emerald-300/90 transition-colors hover:bg-emerald-500/10"
                       >
