@@ -26,6 +26,8 @@ export const POST = handle(async (req) => {
       username: data.username,
       email: data.email,
       passwordHash: hashPassword(data.password),
+      // ISO 3166-1 alpha-2 chosen during the "Select your country" step.
+      country: data.country ? data.country.toUpperCase() : null,
     },
   }).catch((e) => {
     if (e && typeof e === "object" && (e as { code?: string }).code === "P2002") {

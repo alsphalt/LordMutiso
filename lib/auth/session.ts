@@ -60,7 +60,7 @@ export async function createSession(userId: string): Promise<AuthUser> {
 async function loadUser(userId: string): Promise<AuthUser> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, username: true, email: true, image: true, createdAt: true },
+    select: { id: true, username: true, email: true, image: true, country: true, createdAt: true },
   });
   if (!user) throw new ApiError(401, "Account no longer exists");
   return { ...user, createdAt: user.createdAt.toISOString() };

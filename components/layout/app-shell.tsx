@@ -4,7 +4,6 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { 
-  Home, 
   Gamepad2, 
   MessageSquare, 
   MessagesSquare, 
@@ -69,7 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (isPlayPage) return <>{children}</>;
 
   const navItems = [
-    { label: "Lobby", href: "/lobby", icon: Gamepad2 },
+    { label: "Arena", href: "/lobby", icon: Gamepad2 },
     { label: "Chats", href: "/chats", icon: MessagesSquare },
     { label: "Updates", href: "/updates", icon: Sparkles },
     { label: "Arena Chat", href: "/chat", icon: MessageSquare },
@@ -101,7 +100,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
+          {/* Games — the single entrance to DARKNOTE ARENA */}
+          <Link
+            href="/lobby"
+            aria-label="Arena — play games"
+            title="Arena"
+            className="group relative flex h-9 w-9 items-center justify-center rounded-xl border border-arena-purple/40 bg-arena-purple/15 text-arena-purple transition-all hover:bg-arena-purple/25 hover:shadow-[0_0_18px_rgba(139,92,246,0.55)] active:scale-90 sm:h-10 sm:w-10"
+          >
+            <Gamepad2 size={20} className="transition-colors group-hover:text-white" />
+          </Link>
+
           {onlineData && (
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -202,11 +211,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 glass border-x-0 border-b-0 rounded-none z-40 px-6 flex items-center justify-between">
-        <Link href="/" className={cn("flex flex-col items-center gap-1", pathname === "/" ? "text-arena-blue" : "text-slate-500")}>
-          <Home size={20} />
-          <span className="text-[10px] font-bold uppercase">Home</span>
-        </Link>
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-16 glass border-x-0 border-b-0 rounded-none z-40 px-5 flex items-center justify-between">
         <Link href="/chats" className={cn("flex flex-col items-center gap-1", pathname.startsWith("/chats") ? "text-arena-blue" : "text-slate-500")}>
           <MessagesSquare size={20} />
           <span className="text-[10px] font-bold uppercase">Chats</span>
@@ -217,7 +222,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <Link href="/chat" className={cn("flex flex-col items-center gap-1", pathname === "/chat" ? "text-arena-blue" : "text-slate-500")}>
           <MessageSquare size={20} />
-          <span className="text-[10px] font-bold uppercase">Arena</span>
+          <span className="text-[10px] font-bold uppercase">Community</span>
         </Link>
         <Link href={`/u/${user?.username}`} className={cn("flex flex-col items-center gap-1", pathname.startsWith("/u/") ? "text-arena-blue" : "text-slate-500")}>
           <UserIcon size={20} />

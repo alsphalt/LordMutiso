@@ -10,7 +10,7 @@ export const GET = handle(async (req, { params }) => {
 
   const user = await prisma.user.findUnique({
     where: { username },
-    select: { id: true, username: true, image: true, createdAt: true },
+    select: { id: true, username: true, image: true, country: true, createdAt: true },
   });
 
   if (!user) throw notFound("User not found");
@@ -40,6 +40,7 @@ export const GET = handle(async (req, { params }) => {
       id: user.id,
       username: user.username,
       image: user.image,
+      country: user.country,
       createdAt: user.createdAt.toISOString(),
     },
     stats: stats ? {

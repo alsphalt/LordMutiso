@@ -18,6 +18,11 @@ export const registerSchema = z.object({
   username: usernameSchema,
   email: emailSchema,
   password: passwordSchema,
+  country: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z]{2}$/, "Select your country")
+    .optional(),
 });
 
 export const loginSchema = z.object({

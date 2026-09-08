@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Lock, Mail, User as UserIcon } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Lock, Mail, Search, User as UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -11,14 +11,23 @@ import { Logo } from "@/components/ui/logo";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/hooks/api";
 import { useToast } from "@/components/ui/toast";
+import { COUNTRIES, flagEmoji, countryName } from "@/lib/countries";
 
 export default function RegisterPage() {
   const router = useRouter();
   const { refresh } = useAuth();
   const { push } = useToast();
   const [loading, setLoading] = React.useState(false);
-  const [formData, setFormData] = React.useState({ username: "", email: "", password: "" });
+  const [formData, setFormData] = React.useState({ username: "", email: "", password: "", country: "" });
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [countryOpen, setCountryOpen] = React.useState(false);
+  const [countryQuery, setCountryQuery] = React.useState("");
+
+  const filteredCountries = React.useMemo(() => {
+    const q = countryQuery.trim().toLowerCase();
+    if (!q) return COUNTRIES;
+    return COUNTRIES.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
+  }, [countryQuery]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,6 +35,10 @@ export default function RegisterPage() {
 
     if (formData.password.length < 8) {
       setErrors({ password: "Password must be at least 8 characters" });
+      return;
+    }
+    if (!formData.country) {
+      setErrors({ country: "Select your country to continue" });
       return;
     }
 
@@ -71,6 +84,74 @@ export default function RegisterPage() {
                 />
               </div>
             </Field>
+
+            {/* ---------- Select your country ---------- */}
+            <div>
+              <p className="mb-2 flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-widest text-slate-400">Select your country</span>
+                {errors.country && <span className="text-xs font-medium text-rose-400">{errors.country}</span>}
+              </p>
+              <button
+                type="button"
+                onClick={() => setCountryOpen((v) => !v)}
+                className={`flex w-full items-center justify-between gap-3 rounded-2xl border bg-white/[0.03] px-4 py-3.5 text-left transition-colors ${
+                  countryOpen ? "border-arena-purple/60" : formData.country ? "border-emerald-500/40" : "border-white/10"
+                } ${errors.country ? "border-rose-400/60" : ""}`}
+              >
+                <span className="flex items-center gap-3">
+                  {formData.country ? (
+                    <>
+                      <span className="text-xl leading-none">{flagEmoji(formData.country)}</span>
+                      <span className="font-bold text-white">{countryName(formData.country) || formData.country}</span>
+                    </>
+                  ) : (
+                    <span className="text-slate-500 font-medium">Search your country…</span>
+                  )}
+                </span>
+                <ChevronDown size={16} className={`text-slate-500 transition-transform ${countryOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {countryOpen && (
+                <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
+                  <div className="relative border-b border-white/10">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={15} />
+                    <input
+                      autoFocus
+                      value={countryQuery}
+                      onChange={(e) => setCountryQuery(e.target.value)}
+                      placeholder="Search country"
+                      className="w-full bg-transparent py-3 pl-10 pr-4 text-sm text-white placeholder:text-slate-600 outline-none"
+                    />
+                  </div>
+                  <ul className="max-h-64 overflow-y-auto custom-scrollbar py-1">
+                    {filteredCountries.map((c) => {
+                      const selected = formData.country === c.code;
+                      return (
+                        <li key={c.code}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData((f) => ({ ...f, country: c.code }));
+                              setCountryOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+                              selected ? "bg-arena-purple/15 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white"
+                            }`}
+                          >
+                            <span className="text-lg leading-none">{flagEmoji(c.code)}</span>
+                            <span className="flex-1 text-sm font-semibold">{c.name}</span>
+                            {selected && <Check size={16} className="text-arena-purple" />}
+                          </button>
+                        </li>
+                      );
+                    })}
+                    {filteredCountries.length === 0 && (
+                      <li className="px-4 py-6 text-center text-sm text-slate-500">No countries match “{countryQuery}”</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
 
             <Field label="Email" error={errors.email}>
               <div className="relative">

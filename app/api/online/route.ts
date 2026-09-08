@@ -16,7 +16,7 @@ export const GET = handle(async () => {
     }),
     prisma.user.findMany({
       where: { lastSeen: { gte: cutoff } },
-      select: { username: true, image: true },
+      select: { username: true, image: true, country: true },
       orderBy: { lastSeen: "desc" },
       take: 25,
     }),

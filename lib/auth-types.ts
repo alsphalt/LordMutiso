@@ -4,5 +4,6 @@ export interface AuthUser {
   username: string;
   email: string;
   image: string | null;
+  country?: string | null; // ISO 3166-1 alpha-2, e.g. "KE"
   createdAt: string;
 }
