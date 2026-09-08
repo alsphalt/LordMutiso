@@ -25,7 +25,7 @@ export async function applyFinishedStats(
     participants: Array<{ userId: string; playerNumber: number }>;
     winnerUserId: string | null;
     winnerPlayerNumber: number | null;
-    gameType: "LUDO" | "CHESS" | "CHECKERS";
+    gameType: "LUDO" | "CHESS" | "CHECKERS" | "TICTACTOE" | "WALLRUSH";
     gameMode: "ONLINE" | "AI";
   }
 ): Promise<void> {
