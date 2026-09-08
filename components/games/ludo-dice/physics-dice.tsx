@@ -13,8 +13,6 @@
  * - The dice keeps the position where it landed. `snapTo(pose)` restores an
  *   authoritative pose; `replayTo(pose)` tumbles to a server-confirmed pose
  *   for remote/AI rolls so every client converges on the SAME final state.
- * - Colour: the whole die (faces, aura, trail, ready-glow) tints to the seat
- *   colour of the player whose turn it is — pass `color` from the board.
  *
  * Frame-rate cost: physics + DOM style writes run in ONE rAF loop on refs —
  * zero React re-renders per frame. Everything is cleaned up on unmount.
@@ -30,6 +28,8 @@ import {
   quatConj,
   normalizeQuat,
   topFaceOf,
+  axisOfFace,
+  rotateVecByQuat,
 } from "@/lib/games/ludo/dice";
 
 export interface PhysicsDiceHandle {
@@ -48,21 +48,26 @@ interface PhysicsDiceProps {
   pose: LudoDicePose;
   /** Current player may swipe this die. */
   canRoll: boolean;
-  /** Seat colour (hex) of the player whose turn it is — the die theme
-   *  (faces, aura, trail and ready-glow) tints to this colour. */
-  color?: string;
   /** A local physics roll started (parent can flash the "rolling" state). */
   onRollStart?: () => void;
   /** A local physics roll settled — pose + physical face value. */
   onSettled?: (pose: LudoDicePose, value: number) => void;
   /** Ready-to-roll glow pulse. */
   glow?: boolean;
+  /**
+   * Accent colour of the die (hex). Follows the CURRENT PLAYER'S colour so
+   * the die changes colour with the turn. Defaults to classic dice red.
+   */
+  color?: string;
 }
 
 /* ----------------------------- palette ----------------------------- */
 
-const DEFAULT_DIE_COLOR = "#e11d3c";
-
+/** "#rrggbb" -> "r,g,b" (for building rgba() strings). */
+function hexToRgbStr(hex: string): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  return `${(n >> 16) & 0xff},${(n >> 8) & 0xff},${n & 0xff}`;
+}
 function shade(hex: string, pct: number): string {
   const n = parseInt(hex.slice(1), 16);
   const amt = Math.round(2.55 * pct);
@@ -73,56 +78,18 @@ function shade(hex: string, pct: number): string {
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
-}
-
-function rgbCss(rgb: [number, number, number]): string {
-  return `${rgb[0]}, ${rgb[1]}, ${rgb[2]}`;
-}
-
-/** ~perceived lightness (0..255) to pick dark ink on light faces (yellow). */
-function luminance(rgb: [number, number, number]): number {
-  return 0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2];
-}
-
-interface DieTheme {
-  /** Face gradient stops — light catch / base / deep shaded edge. */
-  light: string;
-  base: string;
-  deep: string;
-  /** Face border + inner shadow (derived from the deep tone). */
-  border: string;
-  insetA: string;
-  insetB: string;
-  /** Ink (value numeral) & its depth shadow. */
-  ink: string;
-  inkShadow: string;
-  /** Accent glows as rgb-triplets for aura/trail/ready CSS. */
-  rgb: string;
-  shadowBase: string;
-}
-
-function buildTheme(baseHex: string): DieTheme {
-  const base = /^#[0-9a-fA-F]{6}$/.test(baseHex) ? baseHex : DEFAULT_DIE_COLOR;
-  const light = shade(base, 30);
-  const deep = shade(base, -38);
-  const rgb = hexToRgb(base);
-  const useDarkInk = luminance(rgb) > 170; // yellow / very light seats
-  return {
-    light,
-    base,
-    deep,
-    border: `rgba(${rgbCss(hexToRgb(deep))}, 0.85)`,
-    insetA: `rgba(${rgbCss(hexToRgb(deep))}, 0.55)`,
-    insetB: "rgba(255,255,255,0.5)",
-    ink: useDarkInk ? "#33250a" : "#ffffff",
-    inkShadow: useDarkInk ? "0 1px 0 rgba(255,255,255,0.35), 0 2px 6px rgba(90,60,0,0.25)" : "0 2px 4px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.25)",
-    rgb: rgbCss(rgb),
-    shadowBase: `rgba(${rgbCss(hexToRgb(deep))}, 0.4)`,
-  };
-}
+/**
+ * Counter-rotation that keeps a face's numeral upright when that face turns
+ * toward the viewer (inverse of the baked face transform in CSS_FACES).
+ */
+const INNER_ROT: Record<string, string> = {
+  "": "",
+  "rotateY(180deg)": "rotateY(180deg)",
+  "rotateY(90deg)": "rotateY(-90deg)",
+  "rotateY(-90deg)": "rotateY(90deg)",
+  "rotateX(90deg)": "rotateX(-90deg)",
+  "rotateX(-90deg)": "rotateX(90deg)",
+};
 
 /* --------------------------- math helpers --------------------------- */
 
@@ -228,9 +195,21 @@ function axisAngle(axis: [number, number, number], ang: number) {
 /* --------------------------- component --------------------------- */
 
 export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceProps>(
-  function LudoPhysicalDice({ boardPx, sizePx, pose, canRoll, color, onRollStart, onSettled, glow }, ref) {
+  function LudoPhysicalDice({ boardPx, sizePx, pose, canRoll, onRollStart, onSettled, glow, color = "#e11d3c" }, ref) {
     const s = sizePx || 64;
     const h = s / 2;
+
+    /* Turn-coloured palette — every visual accent is derived from `color`. */
+    const pal = React.useMemo(() => {
+      const light = shade(color, 30);
+      const dark = shade(color, -38);
+      const edge = hexToRgbStr(shade(color, -64));
+      return {
+        faceBg: `radial-gradient(circle at 30% 20%, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.06) 42%), linear-gradient(155deg, ${light} 0%, ${color} 52%, ${dark} 100%)`,
+        edge,
+        glow: hexToRgbStr(color),
+      };
+    }, [color]);
 
     const rootRef = React.useRef<HTMLDivElement>(null);
     const groupRef = React.useRef<HTMLDivElement>(null);
@@ -258,30 +237,6 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
     onRollStartRef.current = onRollStart;
     onSettledRef.current = onSettled;
 
-    /* ---------------- per-player colour theme ---------------- */
-    // The die tints to the seat colour of the player whose turn it is.
-    const theme = React.useMemo(() => buildTheme(color ?? DEFAULT_DIE_COLOR), [color]);
-
-    // Brief brightness pulse whenever the owner colour changes so the swap
-    // reads as an intentional "now it's X's die" moment.
-    const recolorTimerRef = React.useRef<number | null>(null);
-    React.useEffect(() => {
-      const el = cubeRef.current;
-      if (!el) return;
-      el.classList.remove("ludo-die-recolor");
-      void el.getBoundingClientRect(); // restart the animation
-      el.classList.add("ludo-die-recolor");
-      if (recolorTimerRef.current !== null) window.clearTimeout(recolorTimerRef.current);
-      recolorTimerRef.current = window.setTimeout(() => {
-        el.classList.remove("ludo-die-recolor");
-        recolorTimerRef.current = null;
-      }, 640);
-      return () => {
-        if (recolorTimerRef.current !== null) window.clearTimeout(recolorTimerRef.current);
-        recolorTimerRef.current = null;
-      };
-    }, [color]);
-
     /* ---------------- geometry helpers ---------------- */
     const pxToUnit = 1 / Math.max(1, s);
     // Walls clamp the die CENTRE so the cube always stays fully on the board.
@@ -298,7 +253,10 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
         ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         world.addBody(ground);
       }
-      // Perimeter walls — rebuilt when the board is resized.
+      // Perimeter walls — rebuilt when the board is resized. They are TALL
+      // (reach far above the highest possible toss apex ~7 die-units) so the
+      // cube can never hop over the rim and escape the board; it always
+      // bounces back inside. Invisible — only physics.
       for (const w of wallBodiesRef.current) world.removeBody(w);
       wallBodiesRef.current = [];
       const half = allowPx * pxToUnit; // die-centre range in die units
@@ -311,11 +269,14 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
         wallBodiesRef.current.push(b);
         world.addBody(b);
       };
-      const yC = 1.2;
-      makeWall(0, yC, half + thick / 2, half + thick, 1.6, thick / 2); // top wall (css up)
-      makeWall(0, yC, -(half + thick / 2), half + thick, 1.6, thick / 2); // bottom
-      makeWall(half + thick / 2, yC, 0, thick / 2, 1.6, half + thick); // right
-      makeWall(-(half + thick / 2), yC, 0, thick / 2, 1.6, half + thick); // left
+      // Wall centre y = 2.5, half-height 6.5 -> spans y in [-4, 9]; cap at 9 is
+      // above the maximum toss apex (~7) plus the die half (0.5).
+      const yC = 2.5;
+      const wallH = 6.5;
+      makeWall(0, yC, half + thick / 2, half + thick, wallH, thick / 2); // top wall (css up)
+      makeWall(0, yC, -(half + thick / 2), half + thick, wallH, thick / 2); // bottom
+      makeWall(half + thick / 2, yC, 0, thick / 2, wallH, half + thick); // right
+      makeWall(-(half + thick / 2), yC, 0, thick / 2, wallH, half + thick); // left
     }, [allowPx, pxToUnit]);
 
     /* ---------------- direct DOM writers (no re-render) ---------------- */
@@ -371,13 +332,14 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
       world.gravity.set(0, -11.5, 0); // snappy mobile-feel gravity (die units)
       world.broadphase = new CANNON.NaiveBroadphase();
       world.allowSleep = false;
+      (world.solver as { iterations?: number }).iterations = 16; // stable box-plane contacts (no jitter)
 
       const dieMat = new CANNON.Material("die");
       const boardMat = new CANNON.Material("board");
       world.addContactMaterial(
         new CANNON.ContactMaterial(dieMat, boardMat, {
           friction: 0.55,
-          restitution: 0.38,
+          restitution: 0.22,
           contactEquationStiffness: 1e7,
           contactEquationRelaxation: 3,
         })
@@ -385,15 +347,15 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
       world.addContactMaterial(
         new CANNON.ContactMaterial(dieMat, dieMat, {
           friction: 0.3,
-          restitution: 0.4,
+          restitution: 0.25,
         })
       );
 
       const body = new CANNON.Body({
         mass: 1,
         material: dieMat,
-        linearDamping: 0.08,
-        angularDamping: 0.16,
+        linearDamping: 0.1,
+        angularDamping: 0.3,
       });
       body.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.5, 0.5)));
       world.addBody(body);
@@ -490,11 +452,11 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
 
         // Throw distance grows with power — a strong swipe can cross the board
         // (walls bounce it back), a tap is a short local toss.
-        const travel = s * (1.6 + 6.2 * power) * u; // die units/s
+        const travel = s * (1.5 + 5.4 * power) * u; // die units/s
         body.velocity.set(dirX * travel, 0, -dirY * travel);
 
         // Vertical toss so the die leaves the board and bounces like a real throw.
-        const hop = (2.4 + 2.1 * power) * (dirY < 0 ? 1.12 : 1);
+        const hop = (2.0 + 1.7 * power) * (dirY < 0 ? 1.1 : 1);
         body.velocity.y = Math.sqrt(2 * 11.5 * hop); // v = sqrt(2*g*h)
 
         // Rolling spin about the in-plane axis perpendicular to the travel,
@@ -512,7 +474,8 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
         const start = performance.now();
         let prev = start;
         let calmMs = 0;
-        const STABLE_MS = 170;
+        const STABLE_MS = 220;
+        const LEVEL_MAX_MS = 360;
         let done = false;
         let bounceSfxAt = 0;
 
@@ -541,27 +504,51 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
             bounceSfxAt = now;
           }
 
-          const flying = p.y > 0.56;
+          // ---- grounded rolling resistance (the physical "stop") ----
+          // While the die touches the board we apply strong board friction to
+          // horizontal motion. Spin is braked ONLY when the cube is already
+          // lying flat — a cube mid-topple is left free so it can finish
+          // falling onto a face instead of freezing on an edge.
+          if (p.y > -0.1 && p.y <= 0.62) {
+            const kL = Math.pow(0.12, dt);
+            body.velocity.x *= kL;
+            body.velocity.z *= kL;
+            const faceNow = topFaceOf(qcss);
+            const normNow = rotateVecByQuat(axisOfFace(faceNow), qcss);
+            if (normNow[2] > 0.96) {
+              const kA = Math.pow(0.4, dt);
+              body.angularVelocity.x *= kA;
+              body.angularVelocity.y *= kA;
+              body.angularVelocity.z *= kA;
+            }
+          }
+
           const t = (now - start) / 1000;
-          const calm =
-            t > 0.42 && !flying && lin < 0.16 && ang < 0.75;
+          const calm = t > 0.75 && p.y <= 0.78 && lin < 0.3 && ang < 1.6;
           calmMs = calm ? calmMs + dt * 1000 : 0;
 
-          if (calmMs >= STABLE_MS || t > 7) {
+          if (calmMs >= STABLE_MS || t > 6.5) {
             done = true;
-            // Final micro-settle: level the cube onto the winning face.
+            // Final settle: ease the cube onto the winning face. The duration
+            // adapts to how much correction is left, so a die that lands on an
+            // edge visibly "falls flat" instead of snapping.
             const yaw = Math.atan2(2 * (qcss.qw * qcss.qz + qcss.qx * qcss.qy), 1 - 2 * (qcss.qy * qcss.qy + qcss.qz * qcss.qz));
             const flat = flatPoseFor(qcss, yaw);
             const fxF = clamp(p.x * s / boardPx + 0.5, 0, 1);
             const fyF = clamp(-p.z * s / boardPx + 0.5, 0, 1);
+            const tiltNorm = rotateVecByQuat(axisOfFace(flat.value), qcss);
+            const tiltDeg = Math.acos(clamp(tiltNorm[2], -1, 1)) * (180 / Math.PI);
+            const levelMs = Math.min(LEVEL_MAX_MS, 150 + tiltDeg * 9);
             modeRef.current = "level";
             const l0 = performance.now();
             const q0css = { ...qcss };
             const level = (n2: number) => {
-              const lt = Math.min(1, (n2 - l0) / 140);
+              const lt = Math.min(1, (n2 - l0) / levelMs);
               const e = easeInOut(lt);
               const qq = slerp(q0css, flat.q, e);
-              writePose(fxF * boardPx, fyF * boardPx, Math.max(0, (0.5 - Math.abs(0.5 - lt)) * s * 0.05) , qq);
+              // Tiny rise-and-settle so a correction reads as "falling flat".
+              const liftLvl = Math.sin(Math.PI * Math.min(1, lt * 1.4)) * s * 0.08 * (1 - lt);
+              writePose(fxF * boardPx, fyF * boardPx, Math.max(0, liftLvl), qq);
               if (lt < 1) {
                 rafRef.current = requestAnimationFrame(level);
               } else {
@@ -753,8 +740,6 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
     }, []);
 
     /* ---------------- static face nodes ---------------- */
-    // Every face shows ITS number (1–6, opposite faces sum to 7) in a bold
-    // gloss numeral tinted to the current player's colour.
     const faceNodes = React.useMemo(() => {
       const nodes: React.ReactNode[] = [];
       const faceRadius = Math.max(5, Math.round(s * 0.16));
@@ -767,58 +752,71 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
               inset: 0,
               transform: `${rot} translateZ(${h}px)`,
               borderRadius: faceRadius,
-              background: `radial-gradient(circle at 30% 18%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 42%), linear-gradient(155deg, ${theme.light} 0%, ${theme.base} 50%, ${theme.deep} 100%)`,
-              border: `1px solid ${theme.border}`,
-              boxShadow: `inset 0 -5px 9px ${theme.insetA}, inset 0 2px 3px ${theme.insetB}, 0 0 1px rgba(0,0,0,0.4)`,
+              background: pal.faceBg,
+              border: `1px solid rgba(${pal.edge},0.5)`,
+              boxShadow: `inset 0 -5px 10px rgba(${pal.edge},0.55), inset 0 2px 3px rgba(255,255,255,0.5), 0 0 1px rgba(0,0,0,0.35)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               overflow: "hidden",
             }}
           >
-            {/* value numeral */}
-            <span
-              className="relative z-[1] select-none leading-none"
+            {/* the face number — counter-rotated so it reads upright when this
+                face turns toward the viewer */}
+            <div
+              className="absolute inset-0 flex items-center justify-center"
               style={{
-                color: theme.ink,
-                textShadow: theme.inkShadow,
-                fontSize: Math.max(16, Math.round(s * 0.46)),
-                fontWeight: 900,
-                fontStyle: "italic",
-                fontVariantNumeric: "tabular-nums",
-                letterSpacing: "-0.02em",
-                WebkitFontSmoothing: "antialiased",
+                transform: INNER_ROT[rot] ?? "",
+                willChange: "transform",
               }}
             >
-              {value}
-            </span>
+              <span
+                style={{
+                  fontSize: Math.max(14, Math.round(s * 0.44)),
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  color: "#ffffff",
+                  fontFamily:
+                    "'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Roboto, sans-serif",
+                  textShadow:
+                    "0 1px 0 rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4), 0 0 12px rgba(255,255,255,0.25)",
+                  letterSpacing: -0.5,
+                }}
+              >
+                {value}
+              </span>
+            </div>
             {/* specular sheen */}
             <span
               className="pointer-events-none absolute inset-0"
               style={{
                 borderRadius: faceRadius,
                 background:
-                  "linear-gradient(115deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.14) 24%, rgba(255,255,255,0) 46%), linear-gradient(295deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 34%)",
+                  "linear-gradient(115deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.12) 24%, rgba(255,255,255,0) 46%), linear-gradient(295deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 34%)",
               }}
             />
           </div>
         );
       }
       return nodes;
-    }, [s, h, theme]);
+    }, [s, h, pal]);
 
     return (
       <div
         ref={rootRef}
         className="absolute inset-0 z-[45] overflow-visible"
-        style={{ pointerEvents: "none", perspective: `${Math.max(240, s * 3.4)}px`, ["--die-rgb"]: theme.rgb } as React.CSSProperties}
+        style={{
+          pointerEvents: "none",
+          perspective: `${Math.max(240, s * 3.4)}px`,
+          ["--dg" as string]: pal.glow,
+        }}
       >
         <div
           ref={groupRef}
           className="absolute left-0 top-0"
           style={{ width: 0, height: 0, transformStyle: "preserve-3d" }}
         >
-          {/* seat-coloured aura hugging the board under the die */}
+          {/* turn-coloured aura hugging the board under the die */}
           <div
             ref={auraRef}
             aria-hidden
@@ -829,8 +827,8 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
               width: s * 1.7,
               height: s * 1.7,
               transform: "translate(-50%,-50%)",
-              opacity: 0.42,
-              background: `radial-gradient(circle, rgba(${theme.rgb},0.5) 0%, rgba(${theme.rgb},0.16) 46%, rgba(${theme.rgb},0) 70%)`,
+              opacity: 0.4,
+              background: `radial-gradient(circle, rgba(${pal.glow},0.5) 0%, rgba(${pal.glow},0.16) 46%, rgba(${pal.glow},0) 70%)`,
               filter: "blur(6px)",
               willChange: "transform, opacity",
             }}
@@ -865,7 +863,7 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
               height: s * 0.5,
               transform: "translate(-50%,-50%)",
               opacity: 0,
-              background: `radial-gradient(ellipse at 100% 50%, rgba(${theme.rgb},0.9) 0%, rgba(${theme.rgb},0.45) 55%, rgba(${theme.rgb},0) 100%)`,
+              background: `radial-gradient(ellipse at 100% 50%, rgba(${pal.glow},0.9) 0%, rgba(${pal.glow},0.45) 55%, rgba(${pal.glow},0) 100%)`,
               filter: "blur(1.5px)",
               willChange: "transform, opacity",
             }}
@@ -880,8 +878,8 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
               left: -h,
               top: -h,
               transformStyle: "preserve-3d",
-              willChange: "transform, filter",
-              filter: `drop-shadow(0 12px 18px ${theme.shadowBase})`,
+              willChange: "transform",
+              filter: "drop-shadow(0 12px 18px rgba(30,0,4,0.45))",
             }}
           >
             {faceNodes}
@@ -910,15 +908,10 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
         </div>
         <style>{`
           @keyframes ludoDieReady {
-            0%, 100% { filter: drop-shadow(0 12px 18px ${theme.shadowBase}) drop-shadow(0 0 2px rgba(var(--die-rgb),0)); }
-            50% { filter: drop-shadow(0 12px 18px ${theme.shadowBase}) drop-shadow(0 0 20px rgba(var(--die-rgb),0.95)); }
+            0%, 100% { filter: drop-shadow(0 10px 14px rgba(0,0,0,0.35)) drop-shadow(0 0 2px rgba(var(--dg),0)); }
+            50% { filter: drop-shadow(0 10px 14px rgba(0,0,0,0.35)) drop-shadow(0 0 18px rgba(var(--dg),0.95)); }
           }
           .ludo-die-ready { animation: ludoDieReady 1.5s ease-in-out infinite; }
-          @keyframes ludoDieRecolor {
-            0%, 100% { filter: drop-shadow(0 12px 18px ${theme.shadowBase}) brightness(1) saturate(1); }
-            30% { filter: drop-shadow(0 12px 18px ${theme.shadowBase}) brightness(2.05) saturate(1.55); }
-          }
-          .ludo-die-recolor { animation: ludoDieRecolor 0.64s ease-out; }
         `}</style>
       </div>
     );
