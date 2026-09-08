@@ -79,16 +79,16 @@ function shade(hex: string, pct: number): string {
 }
 
 /**
- * Counter-rotation that keeps a face's numeral upright when that face turns
- * toward the viewer (inverse of the baked face transform in CSS_FACES).
+ * Classic pip layouts per face value (percent positions in the 3x3 pip grid).
+ * Value -> dots rendered on the CSS face with that value (see CSS_FACES).
  */
-const INNER_ROT: Record<string, string> = {
-  "": "",
-  "rotateY(180deg)": "rotateY(180deg)",
-  "rotateY(90deg)": "rotateY(-90deg)",
-  "rotateY(-90deg)": "rotateY(90deg)",
-  "rotateX(90deg)": "rotateX(-90deg)",
-  "rotateX(-90deg)": "rotateX(90deg)",
+const PIPS: Record<number, Array<[number, number]>> = {
+  1: [[50, 50]],
+  2: [[75, 25], [25, 75]],
+  3: [[75, 25], [50, 50], [25, 75]],
+  4: [[25, 25], [75, 25], [25, 75], [75, 75]],
+  5: [[25, 25], [75, 25], [50, 50], [25, 75], [75, 75]],
+  6: [[25, 25], [25, 50], [25, 75], [75, 25], [75, 50], [75, 75]],
 };
 
 /* --------------------------- math helpers --------------------------- */
@@ -97,6 +97,20 @@ const INNER_ROT: Record<string, string> = {
 // y=css z (up/board normal), z=css -y. The frame change is a css rotateX(+90).
 const FRAME_Q = { qx: Math.SQRT1_2, qy: 0, qz: 0, qw: Math.SQRT1_2 };
 const FRAME_Q_CONJ = quatConj(FRAME_Q);
+
+/**
+ * Small constant "camera" tilt applied ONLY at render time, so the resting
+ * cube always shows two or three faces at once (unmistakable 3D depth)
+ * instead of one flat-looking square. Physics, poses and the result face are
+ * untouched — the authoritative orientation is still applied beneath it.
+ */
+const VIEW_Q = (() => {
+  const a = (-16 * Math.PI) / 180; // look slightly from above
+  const b = (-18 * Math.PI) / 180; // peek at a side face
+  const qx = { qx: Math.sin(a / 2), qy: 0, qz: 0, qw: Math.cos(a / 2) };
+  const qy = { qx: 0, qy: Math.sin(b / 2), qz: 0, qw: Math.cos(b / 2) };
+  return quatMul(qy, qx);
+})();
 
 function qFromCannon(q: { x: number; y: number; z: number; w: number }) {
   return quatMul(quatMul(FRAME_Q, { qx: q.x, qy: q.y, qz: q.z, qw: q.w }), FRAME_Q_CONJ);
@@ -286,7 +300,8 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
           groupRef.current.style.transform = `translate3d(${xPx.toFixed(2)}px, ${yPx.toFixed(2)}px, 0px)`;
         }
         if (cubeRef.current) {
-          cubeRef.current.style.transform = `translate3d(0px, 0px, ${liftPx.toFixed(2)}px) ${cssMatrix(q)}`;
+          const qv = quatMul(VIEW_Q, q); // camera tilt, render only
+          cubeRef.current.style.transform = `translate3d(0px, 0px, ${liftPx.toFixed(2)}px) ${cssMatrix(qv)}`;
         }
         const liftF = clamp(liftPx / (s * 1.6), 0, 1);
         const sc = 1 - 0.26 * liftF;
@@ -743,6 +758,7 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
     const faceNodes = React.useMemo(() => {
       const nodes: React.ReactNode[] = [];
       const faceRadius = Math.max(5, Math.round(s * 0.16));
+      const pip = Math.max(6, Math.round(s * 0.155));
       for (const { rot, value } of CSS_FACES) {
         nodes.push(
           <div
@@ -761,31 +777,26 @@ export const LudoPhysicalDice = React.forwardRef<PhysicsDiceHandle, PhysicsDiceP
               overflow: "hidden",
             }}
           >
-            {/* the face number — counter-rotated so it reads upright when this
-                face turns toward the viewer */}
-            <div
-              className="absolute inset-0 flex items-center justify-center"
-              style={{
-                transform: INNER_ROT[rot] ?? "",
-                willChange: "transform",
-              }}
-            >
+            {/* physical-looking 3D pips — glossy raised domes */}
+            {(PIPS[value] ?? []).map(([px, py]) => (
               <span
+                key={`p-${value}-${px}-${py}`}
+                className="pointer-events-none absolute"
                 style={{
-                  fontSize: Math.max(14, Math.round(s * 0.44)),
-                  fontWeight: 900,
-                  lineHeight: 1,
-                  color: "#ffffff",
-                  fontFamily:
-                    "'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Roboto, sans-serif",
-                  textShadow:
-                    "0 1px 0 rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4), 0 0 12px rgba(255,255,255,0.25)",
-                  letterSpacing: -0.5,
+                  left: `${px}%`,
+                  top: `${py}%`,
+                  width: pip,
+                  height: pip,
+                  transform: "translate(-50%,-50%)",
+                  borderRadius: "50%",
+                  background:
+                    "radial-gradient(circle at 32% 28%, #ffffff 0%, #f4f5f9 40%, #c6cbd6 80%, #9fa5b3 100%)",
+                  boxShadow:
+                    "0 1px 2px rgba(0,0,0,0.35), inset 0 -2px 3px rgba(0,0,0,0.3), inset 0 2px 2px rgba(255,255,255,0.95)",
+                  zIndex: 1,
                 }}
-              >
-                {value}
-              </span>
-            </div>
+              />
+            ))}
             {/* specular sheen */}
             <span
               className="pointer-events-none absolute inset-0"

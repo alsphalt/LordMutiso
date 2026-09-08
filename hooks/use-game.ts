@@ -84,7 +84,11 @@ export function useGame(gameId: string) {
         armedKey.current = "";
         return;
       }
-      const key = `${s.game.id}:${s.game.currentTurn}:${s.recentMoves.length}`;
+      // Key on the LAST MOVE NUMBER, not the list length: recentMoves is a
+      // windowed slice (last N), so its length saturates and would otherwise
+      // make the AI watchdog treat later turns as "already handled".
+      const lastMove = s.recentMoves.length > 0 ? s.recentMoves[s.recentMoves.length - 1].moveNumber : 0;
+      const key = `${s.game.id}:${s.game.currentTurn}:${lastMove}`;
       if (firedKey.current === key) return;
       if (armedKey.current !== key) {
         armedKey.current = key;

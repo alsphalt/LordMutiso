@@ -29,7 +29,7 @@ export async function buildGameSnapshot(gameId: string, viewerId: string): Promi
   const recentMovesRaw = await prisma.gameMove.findMany({
     where: { gameId },
     orderBy: { moveNumber: "desc" },
-    take: 40,
+    take: 80,
     include: { player: { include: { user: { select: { username: true } } } } },
   });
   recentMovesRaw.reverse();
