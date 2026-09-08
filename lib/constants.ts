@@ -18,7 +18,7 @@ export const CHAT_RATE_WINDOW_MS = 4000; // min gap between two messages by one 
 export const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
 export const ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L
 
-export type GameTypeKey = "LUDO" | "CHESS" | "CHECKERS";
+export type GameTypeKey = "LUDO" | "CHESS" | "CHECKERS" | "TICTACTOE" | "WALLRUSH";
 export type GameStatusKey = "WAITING" | "PLAYING" | "FINISHED" | "DRAW" | "CANCELLED";
 /** Aliases matching the names used by lib/games/types (client & server code imports either). */
 export type GameTypeName = GameTypeKey;
@@ -58,9 +58,17 @@ export const GAME_TYPES: Record<string, GameTypeMeta> = {
     maxPlayers: 2,
     emoji: "🔴",
   },
+  TICTACTOE: {
+    key: "TICTACTOE",
+    label: "Tic Tac Toe",
+    tagline: "Three in a row to win",
+    minPlayers: 2,
+    maxPlayers: 2,
+    emoji: "❎",
+  },
 };
 
-export const GAME_TYPE_LIST: GameTypeKey[] = ["LUDO", "CHESS", "CHECKERS"];
+export const GAME_TYPE_LIST: GameTypeKey[] = ["LUDO", "CHESS", "CHECKERS", "TICTACTOE"];
 
 export const STATUS_LABEL: Record<string, string> = {
   WAITING: "Waiting",

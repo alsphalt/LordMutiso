@@ -18,6 +18,8 @@ enum GameType {
   LUDO
   CHESS
   CHECKERS
+  TICTACTOE
+  WALLRUSH
 }
 
 enum GameStatus {

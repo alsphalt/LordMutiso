@@ -8,10 +8,12 @@ import { ChevronRight } from "lucide-react";
 export function GameCard({ type, onPlay }: { type: GameTypeName; onPlay: () => void }) {
   const meta = GAME_TYPES[type];
   
-  const styles = {
+  const styles: Record<GameTypeName, string> = {
     LUDO: "from-rose-500/20 to-orange-500/20 border-rose-500/30 text-rose-400",
     CHESS: "from-indigo-500/20 to-violet-500/20 border-indigo-500/30 text-indigo-400",
     CHECKERS: "from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400",
+    TICTACTOE: "from-cyan-500/20 to-sky-500/20 border-cyan-500/30 text-cyan-400",
+    WALLRUSH: "from-amber-500/20 to-orange-500/20 border-amber-500/30 text-amber-400",
   };
 
   return (
